@@ -40,6 +40,7 @@ SIGNING_KEY = SigningKey("test-key")
 class Harness:
     """Handles on the doubles behind a running app."""
 
+    app: FastAPI
     client: httpx.AsyncClient
     boost: respx.MockRouter
     snapshots: InMemorySnapshots
@@ -131,7 +132,7 @@ def harness_factory(
             async with app.router.lifespan_context(app):
                 transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                    yield Harness(client, mock, snapshots, redis_server, clock, readiness)
+                    yield Harness(app, client, mock, snapshots, redis_server, clock, readiness)
 
     return factory
 

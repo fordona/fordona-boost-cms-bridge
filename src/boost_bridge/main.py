@@ -13,6 +13,7 @@ from fastapi.routing import APIRoute
 
 from boost_bridge import __version__
 from boost_bridge.api.router import api_router
+from boost_bridge.api.routes import health
 from boost_bridge.container import ServicesFactory, build_services
 from boost_bridge.core.config import Settings, get_settings
 from boost_bridge.core.context import CORRELATION_ID_HEADER
@@ -73,6 +74,7 @@ def create_app(
 
     register_exception_handlers(app)
     app.include_router(api_router)
+    app.include_router(health.router)
 
     if settings.cors_allowed_origins:
         app.add_middleware(
