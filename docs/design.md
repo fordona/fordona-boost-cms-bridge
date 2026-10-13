@@ -311,8 +311,9 @@ These are interfaces only. Nothing in them is implemented.
 1. **`ContentSequencer`** (`services/sequencing.py`)
    ```python
    class ContentSequencer(Protocol):
-       async def sequence(self, learner: Learner, questions: list[Question],
-                          context: SequencingContext) -> list[Question]: ...
+       async def sequence(
+           self, learner: Learner, questions: list[Question], context: SequencingContext
+       ) -> list[Question]: ...
    ```
    - The default `CmsOrderSequencer` returns its input unchanged, preserving CMS order.
    - It is provided by `get_sequencer` in `api/deps.py` and applied on `/v1/lessons/{id}/questions`.
