@@ -5,7 +5,8 @@
 | **Service** | `fordona-boost-cms-bridge` (Python package `boost_bridge`) |
 | **Phase** | 1 — content delivery only |
 | **Tickets** | 01 (production-ready backend + design), 02 (expose Boost content) |
-| **Status** | Implemented; upstream payload shapes **not yet verified** against a live Boost environment (see §12) |
+| **Status** | Implemented. Envelope and field names confirmed from Boost's API docs; a few details still unverified against a live payload (see §12) |
+| **Sources** | Boost OpenAPI 0.1.0 (`https://boost-api.fordona.io/openapi.json`) and the Boost API docs (`https://boost.fordona.io/api-docs`) |
 
 ---
 
@@ -34,6 +35,7 @@ Later, Damith's AI recommendation engine will decide what a learner sees next. T
 - Learner progress, attempts, subscriptions. These live in fordona-engine today.
 - Any recommendation or personalisation logic.
 - Editorial operations: drafts, imports, analytics, user management.
+- Learner metrics. Boost's docs have the frontend send reading-session checkpoints (`POST /v1/engagement/events`) directly to Boost with its own Boost-audience token. Graded attempts and learner question observations go through Fordona Engine, using Engine-signed receipts. None of this passes through this service.
 
 ---
 
@@ -47,12 +49,27 @@ Boost exposes three API surfaces, each with its own credential:
 | **Delivery** | `/v1/delivery/{modules,lessons,questions}[/{id}]`, `/v1/delivery/questions/{id}/revisions/{version}` | learner JWT **or trusted delivery service token** | No | **Yes** |
 | Grading | `/v1/grading/questions/{id}/revisions/{version}` | grading credential | Yes | No (future) |
 
-We call the Delivery surface using the **service token**, for two reasons:
+The API origin is **`https://boost-api.fordona.io`**. `boost.fordona.io` is the CMS UI.
 
-1. **Caching.** Published content looks the same to every learner. Fetching it with one service credential means a single cache entry can serve every user. If we passed through each learner's token, the cache would have to be split per user, or we would risk the Delivery API treating different callers differently.
-2. **Security.** Boost's own documentation warns never to put the service token in a browser or mobile app. A server-side bridge is exactly where it belongs.
+### Which credential (`BOOST_AUTH_MODE`)
 
-**The consequence:** this service is now the access-control boundary for the content. §8 describes how it fills that role and where the gap remains.
+According to Boost's docs, the Delivery surface accepts two credentials:
+
+| Credential | Boost's description | Mode |
+|---|---|---|
+| Short-lived Kinde access token for Boost's audience (`https://boost-api.fordona.io/`) | The primary credential for learner web and mobile clients. Boost checks issuer, audience, expiry and subject. No CMS role is needed. | `forward_learner_token` (**default**) |
+| Shared delivery service token | For "existing trusted delivery consumers" | `service_token` |
+
+The scoped `bst_…` API tokens **cannot** call delivery routes, so they are not an option for this service.
+
+The default forwards the caller's own token after we have verified it ourselves (§8), so no extra secret is needed. It does not weaken the cache:
+- Boost serves the same published content to every authenticated learner, so one cache entry is still correct for everyone.
+- A background refresh uses the token of the request that triggered it.
+- Only a token that has passed our verification is ever forwarded.
+
+`service_token` stays available in case Boost issues one for this service.
+
+**The consequence:** with either credential, published content is readable by anyone holding a Boost-audience learner token, whether through this service or directly from Boost. §8 explains what that means for entitlement.
 
 ---
 
@@ -71,8 +88,8 @@ flowchart LR
         CC --> PG[(Postgres\nlast-known-good snapshot)]
     end
 
-    BC -- "service token" --> BOOST[Boost Delivery API]
-    FE -. "asset URLs (public)" .-> ASSETS[Boost /assets/{id}]
+    BC -- "forwarded learner token\n(or service token)" --> BOOST[Boost Delivery API\nboost-api.fordona.io]
+    FE -. "asset URLs (public)" .-> ASSETS[Boost assets\nassetBaseUrl/{id}]
 ```
 
 ### Layers
@@ -122,8 +139,8 @@ All content routes require `Authorization: Bearer <Kinde access token>`. FastAPI
   3. the default `sv-SE`, matching fordona-engine.
 
   The resolved locale is echoed in the `Content-Language` response header.
-- **No locale fallback.** Boost serves each locale exactly as requested and never substitutes another, and we mirror that. Every entity carries `availableLocales` so the client can choose. If the product wants to fall back to Swedish automatically, that is a deliberate change to make here (see §12).
-- **Assets** are returned as absolute URLs (`{BOOST_PUBLIC_BASE_URL}/assets/{assetId}`), which Boost serves publicly and immutably. We never proxy asset bytes through Python.
+- **No locale fallback.** Boost serves each locale exactly as requested and never substitutes another, and we mirror that. Per Boost's docs, an item with no active translation in the requested locale is simply absent from lists. `availableLocales` is passed through when Boost provides it and is `null` otherwise. If the product wants to fall back to Swedish automatically, that is a deliberate change to make here (see §12).
+- **Assets** are returned as absolute URLs built from **the item's own `assetBaseUrl` plus the asset id**, as Boost's docs prescribe. `BOOST_ASSET_BASE_URL` (default `{BOOST_BASE_URL}/assets`) is used only if an item lacks one. Boost serves assets publicly and immutably, and we never proxy asset bytes through Python.
 - **Stale responses** carry the `X-Content-Stale: true` header. This happens when the service is answering from the Postgres snapshot because Boost is unavailable.
 
 ### Response allowlist
@@ -160,7 +177,7 @@ Every error is returned as an RFC 7807 `application/problem+json` body, using th
 | Boost timed out and no snapshot exists | 504 | `UPSTREAM_TIMEOUT` (with `Retry-After`) |
 | Anything unexpected | 500 | `INTERNAL_ERROR` (no stack trace in the body) |
 
-When Boost returns 401 or 403, the service answers **502, not 401**. The learner's credentials were fine; it was our service token that Boost rejected. Reporting it as an auth error would send the frontend into a re-login loop and hide a configuration fault. These failures are logged at ERROR level.
+When Boost returns 401 or 403, the service answers **502, not 401**. We had already verified the caller's token, so Boost's rejection means the two services disagree: a wrong `KINDE_AUDIENCE`, or a revoked service token. Either way it is our configuration, not the learner's. Reporting it as an auth error would send the frontend into a re-login loop and hide a configuration fault. These failures are logged at ERROR level.
 
 ---
 
@@ -259,7 +276,7 @@ CREATE INDEX ix_content_snapshot_resource_locale ON content_snapshot (resource, 
 
 ## 8. Authentication and trust model
 
-- **Token verification.** Callers present a Kinde access token. It is verified against the same Kinde tenant fordona-engine uses:
+- **Token verification.** Callers present a Kinde access token from the `https://fordona.kinde.com` tenant, issued for **Boost's audience `https://boost-api.fordona.io/`**. Using the same audience is what allows the verified token to be forwarded to Boost unchanged. The token is verified as follows:
   - The signature must be **RS256 only**. `HS256` and `none` are rejected, which closes off algorithm-confusion attacks.
   - `iss` must equal `KINDE_ISSUER_URI`.
   - `aud` must contain one of `KINDE_AUDIENCE`.
@@ -267,14 +284,20 @@ CREATE INDEX ix_content_snapshot_resource_locale ON content_snapshot (resource, 
 - **JWKS handling.** The JWKS is fetched asynchronously and cached for 10 minutes. A token with an unknown `kid` triggers one refetch, rate-limited to once every 60 s, so made-up `kid` values cannot be used to hammer Kinde.
 - **Learner principal.** Each verified request produces a `Learner(sub, claims)` principal, which is logged as `sub`.
 - **Local development.** `AUTH_ENABLED=false` exists for local work only. The service **refuses to start** with it in any `APP_ENV` other than `local`.
+- **Forwarded tokens.** The verified token is held in a request-scoped contextvar that the middleware clears at the start of every request. It is never logged and never forwarded unless it has passed verification.
 - **Secrets** (`BOOST_DELIVERY_TOKEN`) are held as `SecretStr` and are never logged. Logs also redact `Authorization` headers.
 
 ### Known gap: entitlement
 
-> In Phase 1 **any signed-in Kinde user can read the entire published question bank.** fordona-engine currently restricts theory content by subscription (`LearnAccessLevel`, `GET /v1/theory/access`). This service has no such check yet. It must be closed **before public launch**, in one of two ways:
-> (a) an entitlement claim in the Kinde token, verified locally; this is cheapest and preferred.
-> (b) a cached call to fordona-engine's access endpoint.
-> The `Learner` principal is already resolved on every request, so either option is a dependency added in `api/deps.py`; no route changes are needed.
+> **Any learner holding a Boost-audience Kinde token can read the entire published question bank.** fordona-engine currently restricts theory content by subscription (`LearnAccessLevel`, `GET /v1/theory/access`).
+>
+> **Gating only in this service would not close the gap.** Boost's docs say it serves delivery content to any valid Boost-audience learner token with "no CMS role required", and they encourage browsers to call Boost directly. A learner refused here could take the same token straight to `boost-api.fordona.io`.
+>
+> A real fix must be enforced by Boost, or the frontend must stop receiving Boost-audience tokens. Two ways:
+> (a) Boost checks an entitlement claim or permission in the token. This is a Boost change.
+> (b) This service gets its own Kinde audience, so learners only ever hold bridge tokens, and the bridge calls Boost with the service token (`BOOST_AUTH_MODE=service_token`).
+>
+> Option (b) is a configuration change here, plus an entitlement dependency in `api/deps.py`; no route changes are needed. This needs a decision before public launch.
 
 ---
 
@@ -333,9 +356,9 @@ These are interfaces only. Nothing in them is implemented.
 | # | Risk / question | Impact | Owner / next step |
 |---|---|---|---|
 | 1 | **No subscription/entitlement gate** (§8) | Paid content readable by any signed-in user | Ashen — choose claim vs. engine call before launch |
-| 2 | **Delivery response shapes are untyped in Boost's OpenAPI** (`type: object`). Our models are inferred from the `Entity` and `*Mutation` schemas | Mapping may be wrong until checked against real payloads | Obtain delivery service token + staging URL; capture one real payload of each type; tighten `clients/boost/models.py` |
-| 3 | **Overlap with fordona-engine `learn`.** It serves theory content from Directus and stores progress and attempts keyed by Directus UUIDs | Moving the frontend to Boost IDs (decimal strings) leaves existing progress pointing at nothing | Ashen — decide migration path and who owns progress and grading |
-| 4 | **Kinde audience** for Theory App tokens unknown | Valid tokens rejected, or a too-broad audience accepted | Confirm the audience value |
+| 2 | **Delivery shapes partly unverified.** Confirmed from Boost's docs: list envelope `items/total/page/pageSize/asOf`; items with `id, version, locale, shared, translation, resources, assetBaseUrl`; field names (cross-checked against the CMS editor). Still unverified: the exact form of `assetBaseUrl`, whether `availableLocales`/`updatedAt` exist on delivery items, and the `id=` batch format | A wrong asset URL or a missing optional field | Capture one real payload of each type with a Boost-audience learner token (README, "Verifying against live Boost") |
+| 3 | **Overlap with fordona-engine, and Boost's target architecture.** Boost's docs say: "Boost replaces Directus"; the target question path is *frontend → Question Engine → Boost*; **Fordona Engine owns question selection**, pinned versions, attempts, answers, grades and progress; "chapter routing remains a separate integration decision". fordona-engine still keys progress by Directus UUIDs | Two issues. (a) If this service is meant to be the "Question Engine", its main job becomes resolving Engine-pinned revisions (already supported by `/v1/questions/{id}/revisions/{version}`). (b) Putting Damith's recommender in this service's `ContentSequencer` conflicts with "Engine owns question selection". Existing progress also breaks when IDs change | Ashen — confirm whether this service is the Question Engine, and where recommendation lives |
+| 4 | **Shared audience.** The bridge accepts Boost's audience (`https://boost-api.fordona.io/`), so every token valid here is also valid directly at Boost | The bridge is not an access boundary (see §8) | Decide along with risk 1 |
 | 5 | **Readiness includes Redis**, as required, but Redis is fail-open | A Redis blip removes every replica from rotation even though the service still works | Revisit after first incident; option: report Redis as degraded with a 200 |
 | 6 | **Up to soft-TTL staleness after publish** (no webhook) | Editors wait up to 5 minutes | Boost publish webhook → purge endpoint, if needed |
 | 7 | **Order of delivery lists** is not specified by Boost. Its editorial order endpoints are editor-only | Lesson/question order might not match editorial order | Confirm delivery lists honour editorial order |

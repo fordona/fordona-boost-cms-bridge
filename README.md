@@ -1,6 +1,6 @@
 # fordona-boost-cms-bridge
 
-The Theory content API for the Fordona Theory App. It reads published **modules**, **lessons** (the app calls them "chapters") and **questions** from the Boost CMS (`boost.fordona.io`) and serves them to the frontend. It handles authentication, caching, failure handling and a stable, documented contract.
+The Theory content API for the Fordona Theory App. It reads published **modules**, **lessons** (the app calls them "chapters") and **questions** from the Boost CMS delivery API (`boost-api.fordona.io`; [docs](https://boost.fordona.io/api-docs)) and serves them to the frontend. It handles authentication, caching, failure handling and a stable, documented contract.
 
 The design, decisions and open risks are in **[docs/design.md](docs/design.md)**. Read it before changing behaviour.
 
@@ -28,7 +28,7 @@ tests/               unit/ · api/ · integration/ (Docker)
 Prerequisites: [uv](https://docs.astral.sh/uv/) and Docker (for Postgres and Redis).
 
 ```bash
-cp .env.example .env            # then fill in BOOST_DELIVERY_TOKEN and the KINDE_* values
+cp .env.example .env            # Kinde + Boost values are pre-filled for the fordona tenant
 uv sync
 docker compose up -d postgres redis
 uv run alembic upgrade head
@@ -63,6 +63,18 @@ Conventions:
 - **`X-Content-Stale: true`** means Boost was unavailable and the response came from the last-known-good copy.
 - **Correlation.** Send `X-Correlation-ID` to trace a request through to Boost. One is generated if you don't send it.
 
+## Verifying against live Boost
+
+The delivery models still need checking against a real payload (design doc §12, risk 2). You need a Kinde access token for **Boost's audience** (`https://boost-api.fordona.io/`), for example from the Theory App's sign-in.
+
+```bash
+export TOKEN=...   # Boost-audience Kinde access token; never commit or paste it anywhere shared
+curl -s -H "Authorization: Bearer $TOKEN" "https://boost-api.fordona.io/v1/delivery/lessons?locale=sv-SE&pageSize=1"
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/lessons?pageSize=1"
+```
+
+Compare the first response against `src/boost_bridge/clients/boost/models.py`. Check especially the form of `assetBaseUrl` and whether `availableLocales` and `updatedAt` are present.
+
 ## Tests and checks
 
 ```bash
@@ -80,7 +92,7 @@ The API tests run the real stack (routers → service → cache → Boost client
 - **Pre-deploy command:** `alembic upgrade head`. Migrations never run at app start.
 - **Healthcheck path:** `/health/ready`.
 - **Scaling:** run one uvicorn worker per container and add replicas to scale.
-- **Configuration** is all environment variables, documented in `.env.example`. Store `BOOST_DELIVERY_TOKEN` as a secret.
+- **Configuration** is all environment variables, documented in `.env.example`. By default (`BOOST_AUTH_MODE=forward_learner_token`) there is no Boost secret to manage. If you switch to `service_token`, store `BOOST_DELIVERY_TOKEN` as a secret.
 
 Dependencies are pinned in `uv.lock`, the only lockfile; there is no `requirements.txt`. If a platform needs one, generate it with `uv export --no-dev --format requirements-txt`.
 
