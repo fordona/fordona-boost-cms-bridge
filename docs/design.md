@@ -153,9 +153,9 @@ Every error is returned as an RFC 7807 `application/problem+json` body, using th
 | Missing, invalid or expired token | 401 | `UNAUTHORIZED` |
 | Bad path, query or pagination input | 422 | `VALIDATION_FAILED` (with `fieldErrors`) |
 | Content not found or unpublished | 404 | `CONTENT_NOT_FOUND` |
-| Boost rejected *our* credential or request | 502 | `UPSTREAM_MISCONFIGURED` |
-| Boost unavailable and no snapshot exists | 503 | `UPSTREAM_UNAVAILABLE` |
-| Boost timed out and no snapshot exists | 504 | `UPSTREAM_TIMEOUT` |
+| Boost rejected *our* credential or request and no snapshot exists | 502 | `UPSTREAM_MISCONFIGURED` |
+| Boost unavailable and no snapshot exists | 503 | `UPSTREAM_UNAVAILABLE` (with `Retry-After`) |
+| Boost timed out and no snapshot exists | 504 | `UPSTREAM_TIMEOUT` (with `Retry-After`) |
 | Anything unexpected | 500 | `INTERNAL_ERROR` (no stack trace in the body) |
 
 When Boost returns 401 or 403, the service answers **502, not 401**. The learner's credentials were fine; it was our service token that Boost rejected. Reporting it as an auth error would send the frontend into a re-login loop and hide a configuration fault. These failures are logged at ERROR level.
@@ -192,7 +192,7 @@ flowchart TD
     B -- "miss / Redis error" --> E[single-flight upstream fetch]
     E -- "200" --> F[write Redis\nupsert snapshot if hash changed] --> R2[return]
     E -- "404" --> G[write negative entry\ndelete Redis + snapshot] --> NF
-    E -- "unavailable / timeout" --> H{snapshot?}
+    E -- "unavailable / timeout / rejected" --> H{snapshot?}
     H -- yes --> R3[return + X-Content-Stale]
     H -- no --> X[503 / 504]
 ```
@@ -210,7 +210,7 @@ flowchart TD
   - **Within a process**, a set of in-flight keys does the same job.
   - Background tasks are tracked and cancelled on shutdown, so the event loop never loses references to them.
 - **Single-flight on a miss.** When many requests miss the same key at once in one process, they share one upstream call (an in-flight future map). Without this, a cold start or a key expiring would fan out one Boost request per waiting learner. We do not coordinate misses across replicas; the worst case is one upstream call per replica, which we accept.
-- **Stale-if-error.** The snapshot is used **only** when Boost is unavailable or times out. It is never used for a 404.
+- **Stale-if-error.** The snapshot is used **only** when Boost is unavailable, times out, or rejects our credential. It is never used for a 404. A rejected credential (for example a token rotated without updating this service) is still logged at ERROR, but learners keep getting last-known-good content rather than a 502 while it is fixed.
 - **Unpublish semantics.** When Boost returns 404, we delete both the Redis entry and the snapshot. Without that, content that has been withdrawn would come back through the fallback the next time Boost blips.
 - **Fail-open Redis.** Every Redis operation has a 0.5 s socket timeout. A Redis failure is logged at WARN and treated as a miss; it never becomes a 500.
 - **We cache the raw upstream payload**, not the mapped response. It is mapped to response schemas on every read. That way the answer allowlist also covers cached and stale data, and a mapper fix takes effect immediately without flushing anything.
