@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from boost_bridge.container import Services
 from boost_bridge.core.config import SUPPORTED_LOCALES, Settings
+from boost_bridge.core.context import learner_token_var
 from boost_bridge.core.errors import UnauthorizedError, ValidationFailedError
 from boost_bridge.core.locale import UnsupportedLocaleError, resolve_locale
 from boost_bridge.core.security import Learner
@@ -47,6 +48,8 @@ async def get_current_learner(
         if credentials is None or credentials.scheme.lower() != "bearer":
             raise UnauthorizedError()
         learner = await services.verifier.verify(credentials.credentials)
+        # Only a token that passed verification is ever forwarded to Boost.
+        learner_token_var.set(credentials.credentials)
     request.state.learner_sub = learner.sub
     structlog.contextvars.bind_contextvars(learner_sub=learner.sub)
     return learner

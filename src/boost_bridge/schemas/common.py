@@ -30,7 +30,10 @@ class Media(APIModel):
 
 class Localized(APIModel):
     locale: str | None = Field(description="Locale this representation is in.", examples=["sv-SE"])
-    available_locales: list[str] = Field(description="Locales this content is published in.")
+    available_locales: list[str] | None = Field(
+        default=None,
+        description="Locales this content is published in, when Boost provides them.",
+    )
 
 
 class Page[ItemT: BaseModel](APIModel):

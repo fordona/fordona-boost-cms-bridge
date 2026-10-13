@@ -11,7 +11,7 @@ from boost_bridge.clients.boost.errors import (
     BoostTimeout,
     BoostUnavailable,
 )
-from boost_bridge.core.context import correlation_id_var
+from boost_bridge.core.context import correlation_id_var, learner_token_var
 from tests.factories import module_payload, page_payload, problem_payload, question_payload
 
 BASE = "https://boost.test"
@@ -250,3 +250,34 @@ def test_equal_requests_have_equal_params() -> None:
     a = BoostRequests.lessons("sv-SE", page=1, page_size=20, module_id="1", slug=None)
     b = BoostRequests.lessons("sv-SE", page=1, page_size=20, module_id="1")
     assert a == b
+
+
+@respx.mock
+async def test_forward_mode_sends_learner_token(http: httpx.AsyncClient) -> None:
+    client = BoostClient(http, token=None)
+    route = respx.get(f"{BASE}/v1/delivery/modules/1").respond(json=module_payload())
+    token = learner_token_var.set("learner-jwt")
+    try:
+        await client.fetch(BoostRequests.module("1", "sv-SE"))
+    finally:
+        learner_token_var.reset(token)
+    assert route.calls.last.request.headers["Authorization"] == "Bearer learner-jwt"
+
+
+@respx.mock
+async def test_forward_mode_without_learner_token_is_misconfigured(
+    http: httpx.AsyncClient,
+) -> None:
+    client = BoostClient(http, token=None)
+    route = respx.get(f"{BASE}/v1/delivery/modules/1").respond(json=module_payload())
+
+    with pytest.raises(BoostMisconfigured):
+        await client.fetch(BoostRequests.module("1", "sv-SE"))
+    assert route.call_count == 0
+
+
+@respx.mock
+async def test_delivery_item_asset_base_url_is_parsed(client: BoostClient) -> None:
+    respx.get(f"{BASE}/v1/delivery/modules/1").respond(json=module_payload())
+    module = await client.fetch(BoostRequests.module("1", "sv-SE"))
+    assert module.asset_base_url == "https://assets.boost.test/a/"

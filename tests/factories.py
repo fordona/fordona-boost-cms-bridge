@@ -12,6 +12,7 @@ def module_payload(
         "locale": locale,
         "availableLocales": ["sv-SE", "en-GB"],
         "updatedAt": "2026-10-01T10:00:00Z",
+        "assetBaseUrl": "https://assets.boost.test/a/",
         "shared": {
             "iconId": "8f14e45f-ceea-467a-9575-2a9d1f0e0b11",
             "coverImageId": None,
@@ -33,7 +34,6 @@ def lesson_payload(
         "id": lesson_id,
         "version": "2",
         "locale": locale,
-        "availableLocales": ["sv-SE"],
         "shared": {
             "moduleId": module_id,
             "estimatedReadMinutes": 7,

@@ -6,20 +6,32 @@ on their own. ``aiContextSummary`` is intentionally not mapped either: it is
 meant for the AI layer, not for learners.
 """
 
-from boost_bridge.clients.boost.models import BoostLesson, BoostModule, BoostQuestion, Resource
+from boost_bridge.clients.boost.models import (
+    BoostEntity,
+    BoostLesson,
+    BoostModule,
+    BoostQuestion,
+    Resource,
+)
 from boost_bridge.schemas.common import Media
 from boost_bridge.schemas.lessons import Lesson, LessonResource, LessonSummary
 from boost_bridge.schemas.modules import Module
 from boost_bridge.schemas.questions import Question, QuestionOption
 
 
+def _asset_base(entity: BoostEntity, fallback: str) -> str:
+    """The item's own ``assetBaseUrl`` (Boost's documented source), else our configured prefix."""
+    return (entity.asset_base_url or fallback).rstrip("/")
+
+
 def asset_url(asset_base_url: str, asset_id: str | None) -> str | None:
-    # UNVERIFIED: assumes media/file ids are the public asset ids served at
-    # /assets/{assetId} once published (design doc §12).
-    return f"{asset_base_url}/assets/{asset_id}" if asset_id else None
+    # Boost: "Build media URLs from assetBaseUrl and the returned asset ID".
+    # UNVERIFIED: that assetBaseUrl is a prefix the id is appended to with "/".
+    return f"{asset_base_url}/{asset_id}" if asset_id else None
 
 
-def to_module(module: BoostModule, asset_base_url: str) -> Module:
+def to_module(module: BoostModule, fallback_asset_base_url: str) -> Module:
+    asset_base_url = _asset_base(module, fallback_asset_base_url)
     translation = module.translation
     return Module(
         id=module.id,
@@ -53,12 +65,13 @@ def to_lesson_summary(lesson: BoostLesson) -> LessonSummary:
 def _resource(resource: Resource, asset_base_url: str) -> LessonResource:
     return LessonResource(
         type=resource.type,
-        url=f"{asset_base_url}/assets/{resource.file_id}",
+        url=f"{asset_base_url}/{resource.file_id}",
         placement=resource.placement,
     )
 
 
-def to_lesson(lesson: BoostLesson, asset_base_url: str) -> Lesson:
+def to_lesson(lesson: BoostLesson, fallback_asset_base_url: str) -> Lesson:
+    asset_base_url = _asset_base(lesson, fallback_asset_base_url)
     summary = to_lesson_summary(lesson)
     return Lesson(
         **summary.model_dump(),
@@ -67,7 +80,8 @@ def to_lesson(lesson: BoostLesson, asset_base_url: str) -> Lesson:
     )
 
 
-def to_question(question: BoostQuestion, asset_base_url: str) -> Question:
+def to_question(question: BoostQuestion, fallback_asset_base_url: str) -> Question:
+    asset_base_url = _asset_base(question, fallback_asset_base_url)
     shared = question.shared
     translation = question.translation
     media_url = asset_url(asset_base_url, shared.media_id)

@@ -32,7 +32,8 @@ from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
 from tests.fakes import FakeClock, InMemorySnapshots
 
 BOOST = "https://boost.test"
-ASSETS = "https://cdn.boost.test"
+ASSETS = "https://cdn.boost.test/assets"  # fallback when an item has no assetBaseUrl
+ITEM_ASSETS = "https://assets.boost.test/a"  # factories put this on modules
 SIGNING_KEY = SigningKey("test-key")
 
 
@@ -57,8 +58,10 @@ def make_settings(**overrides: object) -> Settings:
         "app_env": "local",
         "log_level": "WARNING",
         "boost_base_url": BOOST,
-        "boost_public_base_url": ASSETS,
+        "boost_asset_base_url": ASSETS,
+        "boost_auth_mode": "service_token",
         "boost_delivery_token": "svc-token",
+        "boost_max_retries": 0,
         "auth_enabled": True,
         "kinde_issuer_uri": ISSUER,
         "kinde_jwks_uri": JWKS_URI,
@@ -101,7 +104,7 @@ def harness_factory(
                         negative_ttl_seconds=s.cache_negative_ttl_seconds,
                     )
                     cache = ContentCache(
-                        BoostClient(boost_http, token="svc-token", max_retries=0),
+                        BoostClient.from_settings(boost_http, s),
                         redis_cache,
                         snapshots,
                         soft_ttl_seconds=s.cache_soft_ttl_seconds,

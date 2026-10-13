@@ -1,16 +1,22 @@
 """Typed models of Boost delivery payloads.
 
-UNVERIFIED: Boost's OpenAPI document types every delivery response as a bare
-``object``. These models are inferred from its ``Entity`` and ``Page`` schemas
-(``id, version, locale, shared, translation, availableLocales, resources``) and
-from the field sets of ``QuestionMutation``, ``ModuleMutation`` and
-``LessonMutation``. Check them against a real payload as soon as a delivery
-token is available (design doc §12, risk 2).
+Boost's OpenAPI document types every delivery response as a bare ``object``.
+These models are built from three sources:
 
-Two choices make them tolerant of drift until then:
+* **Boost's API docs** (boost.fordona.io/api-docs, "Published content"): a list
+  returns ``items, total, page, pageSize, asOf``, and each item has a string
+  ``id``, an immutable ``version``, ``locale``, ``shared``, ``translation``,
+  ``resources`` and ``assetBaseUrl``.
+* **Field names inside ``shared``/``translation``**: Boost's ``*Mutation``
+  schemas, cross-checked against the field names its CMS editor uses.
+* **Still UNVERIFIED** until a real delivery payload is captured (design doc
+  §12): the exact form of ``assetBaseUrl``, and whether delivery items carry
+  ``availableLocales``/``updatedAt``. Both are optional here.
+
+Two choices keep the models tolerant of drift:
 
 * ``extra="ignore"`` everywhere, so new upstream fields never break parsing.
-* ``_EntityBase`` also accepts a *flat* entity, with fields at the top level
+* ``BoostEntity`` also accepts a *flat* entity, with fields at the top level
   instead of under ``shared``/``translation``, in case delivery flattens what
   the editorial API nests.
 
@@ -39,13 +45,16 @@ class Resource(BoostModel):
     placement: str | None = None
 
 
-class _EntityBase(BoostModel):
+class BoostEntity(BoostModel):
     id: str
     version: str | None = None
     locale: str | None = None
-    available_locales: list[str] = Field(default_factory=list)
+    # Not listed among delivery item fields in Boost's docs; None when absent.
+    available_locales: list[str] | None = None
     updated_at: datetime | None = None
     resources: list[Resource] = Field(default_factory=list)
+    # Per Boost's docs: "Build media URLs from assetBaseUrl and the returned asset ID".
+    asset_base_url: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -69,7 +78,7 @@ class ModuleTranslation(BoostModel):
     description: str | None = None
 
 
-class BoostModule(_EntityBase):
+class BoostModule(BoostEntity):
     shared: ModuleShared = Field(default_factory=ModuleShared)
     translation: ModuleTranslation | None = None
 
@@ -90,7 +99,7 @@ class LessonTranslation(BoostModel):
     content_html: str | None = None
 
 
-class BoostLesson(_EntityBase):
+class BoostLesson(BoostEntity):
     shared: LessonShared = Field(default_factory=LessonShared)
     translation: LessonTranslation | None = None
 
@@ -119,7 +128,7 @@ class QuestionTranslation(BoostModel):
     options: list[QuestionOption] = Field(default_factory=list)
 
 
-class BoostQuestion(_EntityBase):
+class BoostQuestion(BoostEntity):
     shared: QuestionShared = Field(default_factory=QuestionShared)
     translation: QuestionTranslation | None = None
 

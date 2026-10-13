@@ -34,8 +34,8 @@ from boost_bridge.clients.boost.models import (
     BoostProblem,
     BoostQuestion,
 )
-from boost_bridge.core.config import Settings
-from boost_bridge.core.context import CORRELATION_ID_HEADER, get_correlation_id
+from boost_bridge.core.config import BoostAuthMode, Settings
+from boost_bridge.core.context import CORRELATION_ID_HEADER, get_correlation_id, learner_token_var
 from boost_bridge.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -195,14 +195,15 @@ class BoostClient:
         self,
         http: httpx.AsyncClient,
         *,
-        token: str,
+        token: str | None = None,
         max_retries: int = 2,
         total_budget: float = 8.0,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         jitter: Callable[[], float] = random.random,
     ) -> None:
         self._http = http
-        self._auth_header = f"Bearer {token}"
+        # A service token, or None to forward the caller's learner token.
+        self._service_token = token
         self._max_retries = max_retries
         self._total_budget = total_budget
         self._sleep = sleep
@@ -210,9 +211,14 @@ class BoostClient:
 
     @classmethod
     def from_settings(cls, http: httpx.AsyncClient, settings: Settings) -> "BoostClient":
+        service_token = (
+            settings.boost_delivery_token.get_secret_value()
+            if settings.boost_auth_mode is BoostAuthMode.SERVICE_TOKEN
+            else None
+        )
         return cls(
             http,
-            token=settings.boost_delivery_token.get_secret_value(),
+            token=service_token,
             max_retries=settings.boost_max_retries,
             total_budget=settings.boost_total_budget,
         )
@@ -252,7 +258,7 @@ class BoostClient:
         return payload
 
     async def _get_with_retries(self, request: BoostRequest[Any]) -> Any:
-        headers = {"Authorization": self._auth_header}
+        headers = {"Authorization": f"Bearer {self._credential(request)}"}
         if correlation_id := get_correlation_id():
             headers[CORRELATION_ID_HEADER] = correlation_id
 
@@ -289,6 +295,16 @@ class BoostClient:
             )
             await self._sleep(delay)
             attempt += 1
+
+    def _credential(self, request: BoostRequest[Any]) -> str:
+        if self._service_token:
+            return self._service_token
+        learner_token = learner_token_var.get()
+        if not learner_token:
+            # Programming error: a Boost call outside an authenticated request.
+            log.error("boost_no_credential", path=request.path)
+            raise BoostMisconfigured("No learner token available to forward to Boost")
+        return learner_token
 
     def _backoff(self, attempt: int, retry_after: float | None) -> float:
         if retry_after is not None:

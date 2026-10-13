@@ -10,6 +10,22 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 SUPPORTED_LOCALES: tuple[str, ...] = ("sv-SE", "en-GB")
 
 
+class BoostAuthMode(StrEnum):
+    """Which credential the bridge presents to Boost's delivery API.
+
+    * ``forward_learner_token`` (default): forward the caller's verified Kinde
+      access token. Boost's docs make Boost-audience learner tokens the primary
+      delivery credential, and no extra secret is needed. Published content is
+      identical for every learner, so the shared cache stays correct.
+    * ``service_token``: Boost's shared delivery service token
+      (``BOOST_DELIVERY_TOKEN``), described by Boost as the credential for
+      existing trusted delivery consumers.
+    """
+
+    FORWARD_LEARNER_TOKEN = "forward_learner_token"  # noqa: S105 - mode name, not a secret
+    SERVICE_TOKEN = "service_token"  # noqa: S105 - mode name, not a secret
+
+
 class Environment(StrEnum):
     LOCAL = "local"
     DEV = "dev"
@@ -34,9 +50,13 @@ class Settings(BaseSettings):
     cors_allowed_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
     # --- Boost -------------------------------------------------------------
-    boost_base_url: AnyHttpUrl = AnyHttpUrl("https://boost.fordona.io")
-    boost_public_base_url: AnyHttpUrl | None = None
+    # The API origin, not the CMS UI at boost.fordona.io.
+    boost_base_url: AnyHttpUrl = AnyHttpUrl("https://boost-api.fordona.io")
+    boost_auth_mode: BoostAuthMode = BoostAuthMode.FORWARD_LEARNER_TOKEN
     boost_delivery_token: SecretStr = SecretStr("")
+    # Fallback asset URL prefix, used only when a delivery item has no
+    # ``assetBaseUrl`` of its own. Defaults to ``{BOOST_BASE_URL}/assets``.
+    boost_asset_base_url: AnyHttpUrl | None = None
     boost_connect_timeout: float = Field(default=2.0, gt=0)
     boost_read_timeout: float = Field(default=5.0, gt=0)
     boost_max_retries: int = Field(default=2, ge=0, le=5)
@@ -83,8 +103,16 @@ class Settings(BaseSettings):
                 "KINDE_ISSUER_URI, KINDE_JWKS_URI and KINDE_AUDIENCE are required "
                 "when AUTH_ENABLED=true"
             )
-        if self.app_env is not Environment.LOCAL and not self.boost_delivery_token:
-            raise ValueError("BOOST_DELIVERY_TOKEN is required outside APP_ENV=local")
+        if self.boost_auth_mode is BoostAuthMode.SERVICE_TOKEN:
+            if not self.boost_delivery_token.get_secret_value():
+                raise ValueError(
+                    "BOOST_DELIVERY_TOKEN is required when BOOST_AUTH_MODE=service_token"
+                )
+        elif not self.auth_enabled:
+            raise ValueError(
+                "BOOST_AUTH_MODE=forward_learner_token needs AUTH_ENABLED=true: "
+                "there is no learner token to forward otherwise"
+            )
         return self
 
     @property
@@ -95,7 +123,10 @@ class Settings(BaseSettings):
 
     @property
     def asset_base_url(self) -> str:
-        return str(self.boost_public_base_url or self.boost_base_url).rstrip("/")
+        """Prefix that an asset id is appended to (``{prefix}/{assetId}``)."""
+        if self.boost_asset_base_url is not None:
+            return str(self.boost_asset_base_url).rstrip("/")
+        return f"{str(self.boost_base_url).rstrip('/')}/assets"
 
 
 @lru_cache

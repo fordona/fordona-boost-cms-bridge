@@ -12,7 +12,11 @@ import uuid
 import structlog
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from boost_bridge.core.context import CORRELATION_ID_HEADER, correlation_id_var
+from boost_bridge.core.context import (
+    CORRELATION_ID_HEADER,
+    correlation_id_var,
+    learner_token_var,
+)
 from boost_bridge.core.errors import ErrorCode, problem_response
 from boost_bridge.core.logging import get_logger
 
@@ -46,6 +50,7 @@ class RequestContextMiddleware:
 
         correlation_id = _incoming_correlation_id(scope)
         token = correlation_id_var.set(correlation_id)
+        learner_token = learner_token_var.set(None)  # never inherit a previous caller's
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
 
@@ -88,4 +93,5 @@ class RequestContextMiddleware:
                 learner_sub=state.get("learner_sub"),
             )
             structlog.contextvars.clear_contextvars()
+            learner_token_var.reset(learner_token)
             correlation_id_var.reset(token)

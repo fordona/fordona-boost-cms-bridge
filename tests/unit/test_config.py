@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from boost_bridge.core.config import Environment, Settings
+from boost_bridge.core.config import BoostAuthMode, Environment, Settings
 
 _AUTH = {
     "kinde_issuer_uri": "https://tenant.kinde.com",
@@ -22,11 +22,21 @@ def test_csv_lists_are_split() -> None:
 
 def test_auth_cannot_be_disabled_outside_local() -> None:
     with pytest.raises(ValidationError, match="only permitted when APP_ENV=local"):
-        _settings(app_env="prod", auth_enabled=False, boost_delivery_token="t")
+        _settings(
+            app_env="prod",
+            auth_enabled=False,
+            boost_auth_mode="service_token",
+            boost_delivery_token="t",
+        )
 
 
 def test_auth_disabled_is_allowed_locally() -> None:
-    settings = _settings(app_env="local", auth_enabled=False)
+    settings = _settings(
+        app_env="local",
+        auth_enabled=False,
+        boost_auth_mode="service_token",
+        boost_delivery_token="t",
+    )
     assert settings.app_env is Environment.LOCAL
 
 
@@ -35,9 +45,19 @@ def test_kinde_settings_required_when_auth_enabled() -> None:
         _settings(auth_enabled=True)
 
 
-def test_delivery_token_required_outside_local() -> None:
+def test_service_token_mode_requires_delivery_token() -> None:
     with pytest.raises(ValidationError, match="BOOST_DELIVERY_TOKEN"):
-        _settings(**_AUTH, app_env="staging")
+        _settings(**_AUTH, boost_auth_mode="service_token")
+
+
+def test_forward_mode_is_default_and_needs_no_delivery_token() -> None:
+    settings = _settings(**_AUTH, app_env="prod")
+    assert settings.boost_auth_mode is BoostAuthMode.FORWARD_LEARNER_TOKEN
+
+
+def test_forward_mode_requires_auth() -> None:
+    with pytest.raises(ValidationError, match="forward_learner_token needs AUTH_ENABLED"):
+        _settings(auth_enabled=False)
 
 
 def test_hard_ttl_must_not_be_below_soft_ttl() -> None:
@@ -57,14 +77,14 @@ def test_log_format_defaults_by_environment() -> None:
     )
 
 
-def test_asset_base_url_prefers_public_url() -> None:
+def test_asset_base_url_fallback() -> None:
     settings = _settings(
         **_AUTH,
         boost_base_url="http://boost.internal:8082",
-        boost_public_base_url="https://boost.fordona.io/",
+        boost_asset_base_url="https://cdn.fordona.io/assets/",
     )
-    assert settings.asset_base_url == "https://boost.fordona.io"
-    assert _settings(**_AUTH).asset_base_url == "https://boost.fordona.io"
+    assert settings.asset_base_url == "https://cdn.fordona.io/assets"
+    assert _settings(**_AUTH).asset_base_url == "https://boost-api.fordona.io/assets"
 
 
 def test_secret_is_not_rendered() -> None:

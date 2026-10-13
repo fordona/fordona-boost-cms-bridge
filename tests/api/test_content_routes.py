@@ -13,7 +13,7 @@ from boost_bridge.core.security import Learner
 from boost_bridge.db.snapshot_repository import Snapshot
 from boost_bridge.schemas.questions import Question
 from boost_bridge.services.sequencing import SequencingContext
-from tests.conftest import ASSETS, BOOST, Harness
+from tests.conftest import ASSETS, BOOST, ITEM_ASSETS, Harness
 from tests.factories import (
     lesson_payload,
     module_payload,
@@ -56,6 +56,29 @@ async def test_auth_disabled_locally_needs_no_token(harness_factory: HarnessFact
     assert response.status_code == 200
 
 
+async def test_forward_mode_sends_the_learners_own_token(harness_factory: HarnessFactory) -> None:
+    async with harness_factory(boost_auth_mode="forward_learner_token") as h:
+        route = h.boost.get(f"{BOOST}/v1/delivery/modules/1").respond(json=module_payload())
+        headers = h.auth()
+
+        response = await h.client.get("/v1/modules/1", headers=headers)
+
+    assert response.status_code == 200
+    assert route.calls.last.request.headers["Authorization"] == headers["Authorization"]
+
+
+async def test_forward_mode_never_forwards_an_unverified_token(
+    harness_factory: HarnessFactory,
+) -> None:
+    async with harness_factory(boost_auth_mode="forward_learner_token") as h:
+        route = h.boost.get(f"{BOOST}/v1/delivery/modules/1").respond(json=module_payload())
+
+        response = await h.client.get("/v1/modules/1", headers=h.auth(aud=["elsewhere"]))
+
+    assert response.status_code == 401
+    assert route.call_count == 0
+
+
 # --- modules -----------------------------------------------------------------
 
 
@@ -81,7 +104,7 @@ async def test_list_modules(harness: Harness) -> None:
         "title": "Trafikregler",
         "slug": "trafikregler",
         "description": "Grundläggande trafikregler",
-        "iconUrl": f"{ASSETS}/assets/8f14e45f-ceea-467a-9575-2a9d1f0e0b11",
+        "iconUrl": f"{ITEM_ASSETS}/8f14e45f-ceea-467a-9575-2a9d1f0e0b11",  # item assetBaseUrl wins
         "coverImageUrl": None,
         "updatedAt": "2026-10-01T10:00:00Z",
     }
@@ -143,10 +166,11 @@ async def test_get_lesson_maps_content_and_hides_ai_summary(harness: Harness) ->
     assert body["resources"] == [
         {
             "type": "image",
-            "url": f"{ASSETS}/assets/c9f0f895-fb98-4b91-8f0e-3f6b1e2d4a55",
+            "url": f"{ASSETS}/c9f0f895-fb98-4b91-8f0e-3f6b1e2d4a55",
             "placement": "hero",
         }
     ]
+    assert body["availableLocales"] is None  # absent upstream -> null, not []
     assert "aiContextSummary" not in body
     assert "INTERNAL" not in response.text
 
@@ -179,7 +203,7 @@ async def test_question_never_contains_answers(harness: Harness) -> None:
     assert [o["id"] for o in body["options"]] == ["a", "b", "c"]
     assert body["media"] == {
         "type": "image",
-        "url": f"{ASSETS}/assets/45c48cce-2e2d-4fbd-9d3e-1a2b3c4d5e6f",
+        "url": f"{ASSETS}/45c48cce-2e2d-4fbd-9d3e-1a2b3c4d5e6f",
     }
     for leaked in ("correctOptionId", "correct_option_id", "explanation", "SECRET"):
         assert leaked not in response.text
@@ -233,16 +257,16 @@ async def test_question_revision(harness: Harness) -> None:
 
 
 async def test_lesson_questions_collects_every_page(harness: Harness) -> None:
-    first = [question_payload(str(i)) for i in range(100, 200)]
-    second = [question_payload(str(i)) for i in range(200, 230)]
+    first = [question_payload(str(i)) for i in range(100, 350)]
+    second = [question_payload(str(i)) for i in range(350, 380)]
     route = harness.boost.get(f"{BOOST}/v1/delivery/questions")
     route.side_effect = lambda request: httpx.Response(
         200,
         json=page_payload(
             first if request.url.params["page"] == "1" else second,
-            total=130,
+            total=280,
             page=int(request.url.params["page"]),
-            page_size=100,
+            page_size=250,
         ),
     )
 
@@ -251,11 +275,11 @@ async def test_lesson_questions_collects_every_page(harness: Harness) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["lessonId"] == "10"
-    assert body["total"] == 130
-    assert len(body["items"]) == 130
+    assert body["total"] == 280
+    assert len(body["items"]) == 280
     assert route.call_count == 2
     assert all(c.request.url.params["lessonId"] == "10" for c in route.calls)
-    assert all(c.request.url.params["pageSize"] == "100" for c in route.calls)
+    assert all(c.request.url.params["pageSize"] == "250" for c in route.calls)
 
 
 class ReversingSequencer:

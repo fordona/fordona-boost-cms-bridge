@@ -17,10 +17,11 @@ from boost_bridge.services.sequencing import ContentSequencer, SequencingContext
 
 log = get_logger(__name__)
 
-# Boost caps pageSize at 100. A lesson's full question set is collected page by
-# page up to this bound, so one runaway lesson cannot fan out without limit.
-_UPSTREAM_PAGE_SIZE = 100
-_MAX_LESSON_QUESTION_PAGES = 10
+# Boost's documented pageSize maximum is 250. A lesson's full question set is
+# collected page by page up to this bound (1,000 questions), so one runaway
+# lesson cannot fan out without limit.
+_UPSTREAM_PAGE_SIZE = 250
+_MAX_LESSON_QUESTION_PAGES = 4
 
 
 @dataclass(frozen=True, slots=True)
