@@ -103,7 +103,7 @@ All content routes require `Authorization: Bearer <Kinde access token>`. FastAPI
 | GET | `/v1/modules/{moduleId}/lessons?page&pageSize` | `GET /v1/delivery/lessons?moduleId=` |
 | GET | `/v1/lessons?moduleId&slug&page&pageSize` | `GET /v1/delivery/lessons` |
 | GET | `/v1/lessons/{lessonId}` | `GET /v1/delivery/lessons/{id}` |
-| GET | `/v1/lessons/{lessonId}/questions?page&pageSize` | `GET /v1/delivery/questions?lessonId=` → sequencer |
+| GET | `/v1/lessons/{lessonId}/questions` | `GET /v1/delivery/questions?lessonId=` (every page, up to 1,000) → sequencer |
 | GET | `/v1/questions?moduleId&lessonId&ids&page&pageSize` | `GET /v1/delivery/questions` |
 | GET | `/v1/questions/{questionId}` | `GET /v1/delivery/questions/{id}` |
 | GET | `/v1/questions/{questionId}/revisions/{version}` | `GET /v1/delivery/questions/{id}/revisions/{version}` |
@@ -114,6 +114,8 @@ All content routes require `Authorization: Bearer <Kinde access token>`. FastAPI
 
 - **IDs are decimal strings** (`^[1-9][0-9]*$`), the same format Boost uses. They are never converted to numbers, because a 64-bit ID can lose precision in JavaScript. Malformed IDs are rejected with a 422 at our own boundary and never reach Boost.
 - **Pagination** uses `page ≥ 1` and `1 ≤ pageSize ≤ 100`, defaulting to 20. List responses have the shape `{items, total, page, pageSize, asOf}`.
+- **`/v1/lessons/{lessonId}/questions` is deliberately not paginated.** It returns the lesson's full published question set as `{lessonId, items, total}`. A sequencer, and later the recommendation engine, needs the whole candidate set to order or select from; reordering one page at a time would be meaningless. Upstream pages of 100 are fetched concurrently and cached individually, capped at 10 pages with a warning log.
+- **Batch lookup**: `GET /v1/questions?ids=1,2,3` accepts up to 100 ids. It is forwarded to Boost as `id=1,2,3`, a format Boost's spec does not pin down (§12).
 - **Locale** is resolved in this order:
   1. the `?locale=` query parameter (`en-GB` or `sv-SE`);
   2. the `Accept-Language` header, matched on its primary subtag (`en*` → `en-GB`, `sv*` → `sv-SE`);
@@ -318,7 +320,7 @@ These are interfaces only. Nothing in them is implemented.
    - The default `CmsOrderSequencer` returns its input unchanged, preserving CMS order.
    - It is provided by `get_sequencer` in `api/deps.py` and applied on `/v1/lessons/{id}/questions`.
    - Damith's engine becomes a second implementation, chosen in `get_sequencer`. The route, the response schema and the frontend do not change.
-   - The engine can reorder, filter or select a subset.
+   - The engine can reorder, filter or select a subset. The service drops anything the sequencer returns that is not in the published candidate set, so a buggy engine cannot inject content.
 2. **Learner identity**: `Learner.sub` is available on every request. The engine can key learner state on it without a schema change.
 3. **Content copy**: `content_snapshot` holds every payload the service has served.
    - It is keyed per request, not per entity, so it is a convenience rather than a full catalogue.
