@@ -36,7 +36,7 @@ def _docker_available() -> bool:
 def database_url() -> Iterator[str]:
     if not _docker_available():
         pytest.skip("Docker is not available")
-    from testcontainers.postgres import PostgresContainer
+    from testcontainers.community.postgres import PostgresContainer
 
     with PostgresContainer("postgres:16-alpine", driver="asyncpg") as container:
         url = container.get_connection_url()

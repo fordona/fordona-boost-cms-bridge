@@ -1,8 +1,8 @@
-# syntax=docker/dockerfile:1.7
-
 # ---- build: resolve the locked environment with uv -------------------------
 FROM python:3.12-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:0.9.18 /uv /usr/local/bin/uv
+# uv comes from PyPI rather than ghcr.io/astral-sh/uv, so building does not depend
+# on GitHub Container Registry access (or a builder's stale ghcr credentials).
+RUN pip install --no-cache-dir uv==0.9.18
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
