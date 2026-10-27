@@ -57,8 +57,8 @@ According to Boost's docs, the Delivery surface accepts two credentials:
 
 | Credential | Boost's description | Mode |
 |---|---|---|
-| Short-lived Kinde access token for Boost's audience (`https://boost-api.fordona.io/`) | The primary credential for learner web and mobile clients. Boost checks issuer, audience, expiry and subject. No CMS role is needed. | `forward_learner_token` (**default**) |
-| Shared delivery service token | For "existing trusted delivery consumers" | `service_token` |
+| Short-lived Kinde access token for Boost's audience (`https://boost-api.fordona.io/`) | The primary credential for learner web and mobile clients. Boost checks issuer, audience, expiry and subject. No CMS role is needed. | `forward_learner_token` (code default; legacy) |
+| Shared delivery service token | For "existing trusted delivery consumers" | `service_token` (**recommended**, see §8 decision) |
 
 The scoped `bst_…` API tokens **cannot** call delivery routes, so they are not an option for this service.
 
@@ -297,7 +297,13 @@ CREATE INDEX ix_content_snapshot_resource_locale ON content_snapshot (resource, 
 > (a) Boost checks an entitlement claim or permission in the token. This is a Boost change.
 > (b) This service gets its own Kinde audience, so learners only ever hold bridge tokens, and the bridge calls Boost with the service token (`BOOST_AUTH_MODE=service_token`).
 >
-> Option (b) is a configuration change here, plus an entitlement dependency in `api/deps.py`; no route changes are needed. This needs a decision before public launch.
+> Option (b) is a configuration change here, plus an entitlement dependency in `api/deps.py`; no route changes are needed.
+
+**Decision (2026-10-27): option (b), with one shared Fordona API audience.**
+- Learners hold a Kinde token for the Fordona API audience (e.g. `https://api.fordona.io`). fordona-engine and this bridge both accept that audience, so the theory app needs a single token for both services.
+- This bridge calls Boost with `BOOST_AUTH_MODE=service_token`. Learner tokens are no longer valid at Boost, so they can no longer be used against Boost directly.
+- `.env.example` now ships this configuration. The code defaults are unchanged, so existing deployments keep starting. Running in the old configuration logs `access_boundary_not_enforced` at startup, once for each setting that causes it.
+- **Still open:** the entitlement dependency itself. The access boundary now exists; checking subscriptions at it is the follow-up. Under the v2 architecture that check is done by engine-signed delivery receipts.
 
 ---
 
@@ -358,7 +364,7 @@ These are interfaces only. Nothing in them is implemented.
 | 1 | **No subscription/entitlement gate** (§8) | Paid content readable by any signed-in user | Ashen — choose claim vs. engine call before launch |
 | 2 | **Delivery shapes partly unverified.** Confirmed from Boost's docs: list envelope `items/total/page/pageSize/asOf`; items with `id, version, locale, shared, translation, resources, assetBaseUrl`; field names (cross-checked against the CMS editor). Still unverified: the exact form of `assetBaseUrl`, whether `availableLocales`/`updatedAt` exist on delivery items, and the `id=` batch format | A wrong asset URL or a missing optional field | Capture one real payload of each type with a Boost-audience learner token (README, "Verifying against live Boost") |
 | 3 | **Overlap with fordona-engine, and Boost's target architecture.** Boost's docs say: "Boost replaces Directus"; the target question path is *frontend → Question Engine → Boost*; **Fordona Engine owns question selection**, pinned versions, attempts, answers, grades and progress; "chapter routing remains a separate integration decision". fordona-engine still keys progress by Directus UUIDs | Two issues. (a) If this service is meant to be the "Question Engine", its main job becomes resolving Engine-pinned revisions (already supported by `/v1/questions/{id}/revisions/{version}`). (b) Putting Damith's recommender in this service's `ContentSequencer` conflicts with "Engine owns question selection". Existing progress also breaks when IDs change | Ashen — confirm whether this service is the Question Engine, and where recommendation lives |
-| 4 | **Shared audience.** The bridge accepts Boost's audience (`https://boost-api.fordona.io/`), so every token valid here is also valid directly at Boost | The bridge is not an access boundary (see §8) | Decide along with risk 1 |
+| 4 | **Shared audience.** The bridge accepted Boost's audience (`https://boost-api.fordona.io/`), so every token valid here was also valid directly at Boost | The bridge was not an access boundary (see §8) | **Decided (§8):** Fordona API audience + `service_token`; applied per environment through config |
 | 5 | **Readiness includes Redis**, as required, but Redis is fail-open | A Redis blip removes every replica from rotation even though the service still works | Revisit after first incident; option: report Redis as degraded with a 200 |
 | 6 | **Up to soft-TTL staleness after publish** (no webhook) | Editors wait up to 5 minutes | Boost publish webhook → purge endpoint, if needed |
 | 7 | **Order of delivery lists** is not specified by Boost. Its editorial order endpoints are editor-only | Lesson/question order might not match editorial order | Confirm delivery lists honour editorial order |
