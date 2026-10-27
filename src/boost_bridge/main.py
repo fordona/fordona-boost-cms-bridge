@@ -57,6 +57,8 @@ def create_app(
                 auth_enabled=settings.auth_enabled,
                 boost_base_url=str(settings.boost_base_url),
             )
+            for warning in settings.access_boundary_warnings:
+                log.warning("access_boundary_not_enforced", detail=warning)
             yield
         log.info("shutdown")
 

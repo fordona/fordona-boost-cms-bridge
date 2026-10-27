@@ -3,6 +3,7 @@
 from enum import StrEnum
 from functools import lru_cache
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -31,6 +32,10 @@ class Environment(StrEnum):
     DEV = "dev"
     STAGING = "staging"
     PROD = "prod"
+
+
+def _host(url: str) -> str | None:
+    return urlsplit(url).hostname
 
 
 def _split_csv(value: object) -> object:
@@ -120,6 +125,30 @@ class Settings(BaseSettings):
         if self.log_format:
             return self.log_format
         return "console" if self.app_env is Environment.LOCAL else "json"
+
+    @property
+    def access_boundary_warnings(self) -> list[str]:
+        """Settings that leave the bridge short of being the theory app's access boundary.
+
+        Both are allowed (existing deployments keep working), but each means a learner's
+        token can read Boost's published question bank without going through the bridge,
+        bypassing the subscription check the bridge exists to enforce. The target setup is
+        ``BOOST_AUTH_MODE=service_token`` with ``KINDE_AUDIENCE`` set to the Fordona API
+        audience that fordona-engine also accepts.
+        """
+        warnings: list[str] = []
+        if self.boost_auth_mode is BoostAuthMode.FORWARD_LEARNER_TOKEN:
+            warnings.append(
+                "BOOST_AUTH_MODE=forward_learner_token: learners need Boost-audience tokens, "
+                "which also work against Boost directly; use service_token"
+            )
+        boost_host = self.boost_base_url.host
+        if any(_host(audience) == boost_host for audience in self.kinde_audience):
+            warnings.append(
+                "KINDE_AUDIENCE includes Boost's own audience: a token accepted here is "
+                "accepted by Boost too; use the Fordona API audience"
+            )
+        return warnings
 
     @property
     def asset_base_url(self) -> str:

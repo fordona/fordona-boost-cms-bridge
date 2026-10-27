@@ -90,3 +90,23 @@ def test_asset_base_url_fallback() -> None:
 def test_secret_is_not_rendered() -> None:
     settings = _settings(**_AUTH, boost_delivery_token="super-secret")
     assert "super-secret" not in repr(settings)
+
+
+def test_boundary_warnings_flag_forwarding_and_boost_audience() -> None:
+    settings = _settings(
+        kinde_issuer_uri="https://tenant.kinde.com",
+        kinde_jwks_uri="https://tenant.kinde.com/.well-known/jwks",
+        kinde_audience="https://boost-api.fordona.io/",
+    )
+    assert len(settings.access_boundary_warnings) == 2
+
+
+def test_no_boundary_warnings_for_service_token_and_fordona_audience() -> None:
+    settings = _settings(
+        kinde_issuer_uri="https://tenant.kinde.com",
+        kinde_jwks_uri="https://tenant.kinde.com/.well-known/jwks",
+        kinde_audience="https://api.fordona.io",
+        boost_auth_mode=BoostAuthMode.SERVICE_TOKEN,
+        boost_delivery_token="t",
+    )
+    assert settings.access_boundary_warnings == []
