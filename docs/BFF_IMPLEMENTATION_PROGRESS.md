@@ -440,16 +440,18 @@ every repository the plan touches:
   - **Acceptance:** for the stub data, every question with ≥ 2 same-lesson peers has ≥ 2 neighbours. — met
     against a real Postgres fixture (today's real Boost still has no content to run this against for real).
 
-- [ ] **P3.T8 Platform endpoints: sync and content report** · Repo: ENG · Dep: P3.T5, P3.T7 · Plan §7.6 · `.claude/rules/platform-module.md`
-  - [ ] `learn/platform/api/TheoryContentPlatformController`:
+- [x] **P3.T8 Platform endpoints: sync and content report** · Repo: ENG · Dep: P3.T5, P3.T7 · Plan §7.6 · `.claude/rules/platform-module.md`
+  - [x] `learn/platform/api/TheoryContentPlatformController`:
     - `POST /v1/platform/theory/content-sync?full=` (calls the same use case);
     - `GET /v1/platform/theory/content-report`: release, hidden templates and lessons, excluded questions with
       reasons, similarity coverage, and the per-template difficulty mix (R-7).
     - The extras-shortfall rate is added in P4.
-  - [ ] Platform-admin permission, the same mechanism as the existing platform controllers.
+  - [x] Platform-admin permission, the same mechanism as the existing platform controllers.
   - **Tests:** 401 when unauthenticated; 403 for a non-admin; happy path for both endpoints.
   - **Acceptance:** after a sync, the report against the stub data lists the generated templates and any synthetic
-    gaps.
+    gaps. — the report assembly itself is verified against a real Postgres fixture; running it against the actual
+    staging stub's generated templates is still open, same caveat as P3.T7 (today's real Boost/stub has nothing to
+    sync yet).
 
 - [ ] **P3 Phase exit:** the engine syncs the staging stub every 30 s, holds a snapshot on every instance, and the
   content report is clean, or its findings are logged.

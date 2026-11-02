@@ -1034,3 +1034,64 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P3.T8 (platform endpoints: sync and content report) — now unblocked, since it depends
   on P3.T5 (done) and P3.T7 (done). That's also the last task in Phase P3.
+
+### 2026-11-02 · P3.T8 · Platform endpoints: sync and content report
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 1743929e
+- **What was done:**
+  - **A real gap found while scoping this task, fixed as a necessary precursor:** `ContentSyncService`
+    already computed *why* a question was excluded (`QuestionValidationResult.reason()`) but never
+    persisted it, and an `EXCLUDED` question never gets a `content_question_revision` row either (the
+    insert is gated on `result.valid()`), so the reason was permanently unrecoverable after the fact —
+    the content report needed it reportable. Fixed with `V1_0_16_2__content_question_exclusion_reason.sql`
+    (`content_question.exclusion_reason TEXT`), threaded through the entity/model/repository/store, and
+    wired into `ContentSyncService`'s question loop
+    (`questionModel.setExclusionReason(result.valid() ? null : result.reason().name())`).
+  - `TheoryContentPlatformController` (`learn/platform/api/`), both endpoints `@PlatformAdmin`:
+    - `POST /v1/platform/theory/content-sync?full=` calls `ContentSyncService#sync` directly — same
+      module as the controller, so this is "the regular controller" CLAUDE.md's ExternalUseCase
+      delegation rule talks about, not a cross-tier call; `TheoryContentSyncExternalUseCase` stays the
+      job module's own entry point into the same primary method.
+    - `GET /v1/platform/theory/content-report` calls the new `ContentReportService`.
+  - `ContentReportService` (read-only, `@Transactional(readOnly = true)`) assembles: the latest
+    release; hidden lessons and templates; excluded questions with their reason; similarity-coverage
+    gaps; and the per-template difficulty mix (R-7) — all from store reads already built in earlier
+    tasks, plus two new store methods (`findAllHiddenLessons`, `findAllHiddenTemplates`,
+    `findAllExcludedQuestions`) added alongside the exclusion-reason fix.
+  - `SimilarityCoverageChecker` (pure, like `NeighbourRanker`/`HomeLessonResolver`): Plan §4.4's
+    report-only rule — for each ACTIVE question at level `L`, at least 2 of its stored neighbours must
+    be at level `L` or `L-1` **and** in the same-or-earlier lesson (the same filters the retry phase's
+    similar-item selection will apply in P4, so a neighbour that wouldn't pass those filters can't
+    count toward coverage either). Lesson order is `(unit sort, lesson sort)`, built from every lesson
+    (visible or hidden) joined with unit sort — a question's home lesson isn't guaranteed visible.
+  - The extras-shortfall rate from Plan §5.3 step 5 is **not** in this report, per the tracker's own
+    note — `retry_extras_short` lives on `lesson_attempt`, which P4.T1 creates.
+  - New DTOs in `learn/platform/api/dto/`: `TheoryContentReleaseDTO`, `HiddenLessonDTO`,
+    `HiddenTemplateDTO`, `ExcludedQuestionDTO`, `SimilarityCoverageGapDTO`, `TemplateDifficultyMixDTO`,
+    `TheoryContentReportDTO` (the aggregate).
+- **Tests:**
+  - `SimilarityCoverageCheckerTest` (pure, 6 tests): the 2-neighbour threshold; a neighbour one level
+    *above* the seed doesn't count; a neighbour in a later lesson doesn't count; a neighbour in an
+    earlier lesson does; zero stored neighbours is a gap with count 0. Each assertion scopes to the
+    seed question's own gap, since the checker (correctly) evaluates every question in the bank, not
+    only the one the test cares about — the bank's other questions come back as their own gaps too
+    when the test gives them no neighbours of their own.
+  - `ContentReportServiceTest` (1 test, real Postgres): seeds a visible lesson/template, a hidden
+    lesson/template, two ACTIVE questions each with only one stored neighbour (below the coverage
+    threshold) and one EXCLUDED question with a reason, then asserts every section of the assembled
+    report.
+  - `TheoryContentPlatformControllerTest` (6 tests): opts out of the test harness's blanket permit-all
+    security chain (imports the real `SecurityConfig` + `MethodSecurityConfig`, same pattern as
+    `PublicEndpointSecurityTest`) — needed because under the default permit-all chain an anonymous
+    request still reaches `@PreAuthorize` as a 403, never a genuine 401. Covers: unauthenticated → 401,
+    authenticated without `platform_admin` → 403, and the happy path for both endpoints.
+  - Full suite: `./gradlew test` → **1483 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** none beyond the exclusion-reason persistence fix, which is a
+  precursor the tracker's own P3.T4 entry didn't call for explicitly but P3.T8 depends on.
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P3 phase exit is now checkable (every P3 task is done) — the engine syncs the staging
+  stub every 30 s, holds a snapshot per instance, and the content report is in place. P4 (engine:
+  attempts, grading, retry) is next, starting with P4.T1 (migrations and retry policy), but per this
+  session's pattern that's a proposal to make, not something to start unilaterally.
