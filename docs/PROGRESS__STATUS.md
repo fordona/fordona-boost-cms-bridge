@@ -186,3 +186,67 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES. P1.T2 is blocked on P0.T3 and P0.T4 (owner). Continuing with P2.T1 per the owner's
   instruction to continue implementing (its only dependency, P0.T1, is ticked).
 - **Next task:** P2.T1.
+
+### 2026-11-02 · P2.T1 · Contract test suite for §13
+
+- **Status:** PARTIAL (all sub-tasks done; the acceptance run with real tokens waits on P0.T3)
+- **Repo / branch / commit:** BFF · feat/theory-app-implementations · 699f8b6
+- **Owner instruction recorded:** "continue implementations" (2026-11-02), so P2.T1 started while P1 is still open
+  (P1.T2 is blocked on P0.T3 and P0.T4). P2.T1's only dependency, P0.T1, is ticked.
+- **What was done:**
+  - `tests/contract/boost_content_v1/`: 52 black-box tests in 7 modules (change feed 7, templates 11, lesson
+    revision 4, question revisions 10, grading 6, topics 3, lists/`id=`/ETag 11). It never imports `boost_bridge`
+    or `boost_stub`, so it judges the server against §13, not against our models.
+  - Beyond the tracker's list, these §13 rules are also checked: the template publish rules that are visible from
+    outside (≥ 3 questions, all published, all in the template's module); `correctOptionId` is one of the
+    delivered options of the same revision; every question's `topicKey` is in its module's topic vocabulary;
+    delivery batch responses carry no answer field anywhere (recursive key search); Boost's error envelope
+    (`status`, `code`) on 410/422; the batch honours `locale`; unknown revisions → 404.
+  - `blocks.py`: the §4.6 validator (types, required fields, "Allowed in" per context, prompt starts with
+    `text`, per-locale explanation maps), with 40 unit tests in `tests/unit/test_contract_blocks.py`.
+  - Config: skips entirely without `CONTRACT_BOOST_BASE_URL`; refuses a run with a base URL but no tokens
+    (`pytest.UsageError`) so a half-configured run can't look green. No I/O at fixture setup, so any server
+    problem is a test **failure**, never a setup error. Marker `contract` registered in `pyproject.toml`.
+  - CI: the repo had none. Added `.github/workflows/ci.yml` (GitHub Actions): job `checks` (ruff, ruff format,
+    `mypy src`, `pytest -m "not contract"`, which includes the Docker integration tests) and a separate job
+    `contract-boost` fed from repository secrets `CONTRACT_BOOST_BASE_URL`, `CONTRACT_DELIVERY_TOKEN`,
+    `CONTRACT_GRADING_TOKEN`, `CONTRACT_EXPIRED_CURSOR` (skips while unset). P2.T3 adds a job against the stub.
+- **Tests:**
+  - `uv run pytest -q` → 205 passed, 52 skipped (the contract suite, no base URL) / 257.
+    `uv run pytest -q -m "not contract"` → 205 passed, 52 deselected. Block validator: 40/40.
+  - `uv run ruff check .` → all checks passed; `uv run ruff format --check .` → 77 files already formatted;
+    `uv run mypy src` → no issues in 33 files; `uv run mypy --strict tests/contract` → no issues in 13 files.
+    `.github/workflows/ci.yml` parses as YAML; `uv lock --check` → lockfile up to date.
+  - Half-configured run (`CONTRACT_BOOST_BASE_URL` only) → refused: "CONTRACT_BOOST_BASE_URL is set but
+    CONTRACT_DELIVERY_TOKEN, CONTRACT_GRADING_TOKEN is not".
+  - Acceptance, **partial**: against today's Boost (`https://boost-api.fordona.io`) with **placeholder** tokens
+    → 50 failed, 2 passed, **0 errors**, in 17.4 s. Every failure is an assertion that names the request and the
+    response; the 2 passes are the two token-scope tests, where a rejected token is the expected result. This
+    proves the suite fails cleanly. It does **not** yet prove the assertions are meaningful, because every call
+    stops at 401. That needs a real delivery token and grading token (P0.T3), after which the expected result is
+    404s and shape failures on the endpoints §13 adds.
+  - The CI workflow has not run yet: nothing is pushed (owner's rule).
+- **Decisions taken where the plan is silent (please confirm or correct):**
+  1. **Expired cursor:** a black-box test cannot age a cursor by 30 days, so the server's operator supplies one in
+     `CONTRACT_EXPIRED_CURSOR`. Unset → that one test **fails** with instructions (not skipped). The stub
+     (P2.T3) must therefore offer a known-expired cursor, and the Boost owner must supply one for staging.
+  2. **Image `width`/`height` are optional** (positive integers when present). §4.6 lists them, but §13.4's
+     option example omits them. If they are meant to be required, the §13.4 example is wrong.
+  3. **Video `captions`:** required as a non-empty list whose entries each have a `locale`. The plan doesn't
+     define the entry's other fields (asset id vs URL), so the suite doesn't check them.
+  4. **Not contract-tested** (they can't be checked reliably from outside): commit-order safety, at-least-once
+     delivery, 30-day retention, latency p99, and gzip/brotli (servers skip compressing small bodies). The
+     out-of-range `limit` on the feed, and `id=` lists over 100 ids, are not tested because §13 doesn't say what
+     they return.
+  5. **CI provider:** GitHub Actions, since the repo is on GitHub and had no CI. `uv` is pinned to the
+     Dockerfile's version and installed from PyPI, like the Dockerfile.
+- **Deviations from the plan:** none.
+- **Issues found / open risks:**
+  - The suite has not yet passed against any conforming server; the first green run will be against the stub in
+    P2.T3. A suite bug could surface there.
+  - Discovery builds on the **first published template**. A server with templates but an empty change feed, or
+    without topics for that module, fails the "precondition" assertions. That is intended: §13 requires both.
+- **Ready to continue:** NO, blocked on the owner. P2.T1's acceptance, P2.T2 (needs a Boost delivery token to read
+  today's Boost) and therefore P2.T3, plus all of P3 (needs P0), wait on **P0.T3: a Boost delivery token and a
+  grading token** (P0.T2/P0.T4 for P3 too). No task in the tracker has all its dependencies ticked now.
+- **Next task:** finish P2.T1's acceptance run, then P2.T2, once the P0.T3 tokens exist.

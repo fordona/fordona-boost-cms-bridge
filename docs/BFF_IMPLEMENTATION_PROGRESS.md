@@ -159,31 +159,32 @@ every repository the plan touches:
 
 - [ ] **P2 — phase done**
 
-- [ ] **P2.T1 Contract test suite for §13** · Repo: BFF · Dep: P0.T1 · Plan §13
-  - [ ] Create `tests/contract/boost_content_v1/`, parametrised by base URL + tokens from env
+- [ ] **P2.T1 Contract test suite for §13** · Repo: BFF · Dep: P0.T1 · Plan §13 — PARTIAL (2026-11-02): code and
+  tests done; acceptance waits for real Boost tokens (P0.T3), see `PROGRESS__STATUS.md`
+  - [x] Create `tests/contract/boost_content_v1/`, parametrised by base URL + tokens from env
         (`CONTRACT_BOOST_BASE_URL`, `CONTRACT_DELIVERY_TOKEN`, `CONTRACT_GRADING_TOKEN`). Skip when unset.
-  - [ ] Tests per endpoint (§13.2):
-    - [ ] change feed;
-    - [ ] template list and revision;
-    - [ ] lesson revision;
-    - [ ] question batch;
-    - [ ] grading batch;
-    - [ ] topics;
-    - [ ] the multi-value `id=` filter.
-  - [ ] Rules:
-    - [ ] batch `missing[]` semantics;
-    - [ ] more than 100 refs → 422;
-    - [ ] `CURSOR_EXPIRED` → 410;
-    - [ ] `seq` strictly increasing;
-    - [ ] revision endpoints send `Cache-Control: … immutable` and `ETag`;
-    - [ ] lists answer `If-None-Match` with 304;
-    - [ ] the delivery token gets 401/403 on `/v1/grading/**`.
-  - [ ] Shape checks (§13.4):
-    - [ ] template `shared.questions[]` sorted;
-    - [ ] question `topicKey`, `prompt` blocks, `options[].blocks`;
-    - [ ] grading `correctOptionId` + per-locale explanation blocks;
-    - [ ] lesson `translation.blocks`.
-  - [ ] Block validation helper: the block types and required fields from Plan §4.6.
+  - [x] Tests per endpoint (§13.2):
+    - [x] change feed;
+    - [x] template list and revision;
+    - [x] lesson revision;
+    - [x] question batch;
+    - [x] grading batch;
+    - [x] topics;
+    - [x] the multi-value `id=` filter.
+  - [x] Rules:
+    - [x] batch `missing[]` semantics;
+    - [x] more than 100 refs → 422;
+    - [x] `CURSOR_EXPIRED` → 410;
+    - [x] `seq` strictly increasing;
+    - [x] revision endpoints send `Cache-Control: … immutable` and `ETag`;
+    - [x] lists answer `If-None-Match` with 304;
+    - [x] the delivery token gets 401/403 on `/v1/grading/**`.
+  - [x] Shape checks (§13.4):
+    - [x] template `shared.questions[]` sorted;
+    - [x] question `topicKey`, `prompt` blocks, `options[].blocks`;
+    - [x] grading `correctOptionId` + per-locale explanation blocks;
+    - [x] lesson `translation.blocks`.
+  - [x] Block validation helper: the block types and required fields from Plan §4.6.
   - **Acceptance:** the suite runs and **fails cleanly** (it doesn't error) against today's Boost, which proves the
     assertions are meaningful; it is wired into CI as a separate job.
 
