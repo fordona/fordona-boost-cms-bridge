@@ -333,7 +333,10 @@ every repository the plan touches:
   - **Acceptance:** a WireMock suite covers every method. — met with `MockRestServiceServer` (8 tests, all
     public methods covered).
 
-- [ ] **P3.T4 Content validation and sync service** · Repo: ENG · Dep: P3.T2, P3.T3 · Plan §4.3, §4.4
+- [ ] **P3.T4 Content validation and sync service** · Repo: ENG · Dep: P3.T2, P3.T3 · Plan §4.3, §4.4 —
+  PARTIAL (2026-11-02, part 1 of 2): the pure validation/derivation logic below is done and tested; the
+  sync orchestration itself (`ContentSyncService`, the data layer, the acceptance test) is not started.
+  See `PROGRESS__STATUS.md`.
   - [ ] `ContentSyncService.sync(Instant now, boolean full)`:
     - read the change feed from `content_release.change_cursor`;
     - fetch the changed ids;
@@ -344,19 +347,24 @@ every repository the plan touches:
     - create a new `content_release` **only if something changed**.
   - [ ] **Full resync:** `full=true` resets the cursor and reads all lists (`pageSize` 250). It runs on
         `CURSOR_EXPIRED` too.
-  - [ ] Validation rules (Plan §4.4):
-    - a question is EXCLUDED when its key isn't among its options, options aren't distinct, difficulty is outside
-      1–5, domain or topic is unknown, or a locale is missing;
-    - a template with fewer than 3 valid questions is HIDDEN;
-    - a lesson with no visible template or empty theory is HIDDEN.
-  - [ ] Level mapping from `difficulty_level_map` (default 1–2 easy, 3 medium, 4–5 hard).
-  - [ ] `home_lesson_id` = the lesson of the question's first template by sort.
-  - [ ] `media_kinds` derived from the block types in the prompt and options.
-  - [ ] Unit and lesson titles stored per locale. **No question text or theory stored** (Plan §6 notes).
+  - [x] Validation rules (Plan §4.4):
+    - [x] a question is EXCLUDED when its key isn't among its options, options aren't distinct, difficulty is
+          outside 1–5, domain or topic is unknown, or a locale is missing — **deviation:** the domain-unknown
+          check uses a configurable allowlist that defaults to empty/permissive, since Boost's actual six
+          domain codes aren't enumerated anywhere; see `PROGRESS__STATUS.md`;
+    - [x] a template with fewer than 3 valid questions is HIDDEN;
+    - [x] a lesson with no visible template or empty theory is HIDDEN.
+  - [x] Level mapping from `difficulty_level_map` (default 1–2 easy, 3 medium, 4–5 hard) — hardcoded as the
+        default for now; `retry_policy.difficulty_level_map` (P4.T1) doesn't exist yet to read from instead.
+  - [x] `home_lesson_id` = the lesson of the question's first template by sort.
+  - [x] `media_kinds` derived from the block types in the prompt and options.
+  - [ ] Unit and lesson titles stored per locale. **No question text or theory stored** (Plan §6 notes). —
+        this is the sync service's job (not started); the validation/derivation logic above never reads or
+        stores title/theory text, only structural fields.
   - **Unit tests:**
-    - [ ] each validation rule;
-    - [ ] the level mapping;
-    - [ ] home lesson;
+    - [x] each validation rule;
+    - [x] the level mapping;
+    - [x] home lesson;
     - [ ] no release when nothing changed;
     - [ ] cursor advance.
   - **Acceptance:** a Testcontainers test syncs the stub's fixtures (recorded responses) into an empty database; a

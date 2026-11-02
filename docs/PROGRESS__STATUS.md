@@ -724,3 +724,62 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Next task:** P2.T4 (deploy the stub to staging — EXT/Dokploy, and now also waits on the Boost owner
   actually standing up a staging Boost tenant, per their own message today) or P3.T4 (engine: content
   validation and sync service), whichever the owner picks next.
+
+### 2026-11-02 · P9.T2 (status note) · Boost owner + Eric aware, publishing to follow
+
+- **Status:** note only, no code change.
+- **What happened:** the owner had a call with the content author (Eric); both are aware the content
+  sitting in Boost is still all Draft (confirmed via the Boost admin dashboard: 111 theory records, 712
+  questions, 0 published anywhere). They're having their own call to review and publish. The owner's advice:
+  keep completing the implementation on our side so there's no blocker once publishing happens.
+- **Decision recorded (2026-11-02, owner):** continue down `BFF_IMPLEMENTATION_PROGRESS.md` in order. Next
+  up per dependency order: P3.T4 (content validation and sync service, engine).
+- **Ready to continue:** YES.
+- **Next task:** P3.T4.
+
+### 2026-11-02 · P3.T4 (part 1 of 2) · Content validation and derivation rules
+
+- **Status:** PARTIAL — the pure validation/derivation logic is done and tested; the stateful half
+  (data layer, `ContentSyncService`, Testcontainers acceptance test) is not started.
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · f0441fac
+- **What was done:**
+  - `QuestionValidator`, `TemplateValidator`, `LessonValidator`, `DifficultyLevelMapper`,
+    `HomeLessonResolver` — all pure functions, no I/O, no Spring context, in a new
+    `learn/theory/content/` package.
+  - `HomeLessonResolver` needed its own design, not just a lookup: a question's templates can span
+    different lessons (even different units), and a template's own `sort` only orders it *within its
+    lesson* — "first template by sort" (Plan §4.1) is only well-defined as a triple order (unit sort,
+    then lesson sort, then template sort), which is the order a learner actually walks the unit path.
+    Implemented and tested that ordering explicitly, including the "different units" case.
+  - Two small, deliberately narrow additions to the already-committed P3.T3 Boost client models,
+    each justified in its own Javadoc so a future reader doesn't mistake them for a reintroduction of
+    question text:
+    - `BoostLesson.Translation.hasContent()` — reads `contentHtml` only to answer "is there any
+      theory at all" (Plan §4.4's lesson-visibility rule); there is no public accessor for the HTML
+      itself — `Translation` is a hand-written class, not a record, specifically so no accessor method
+      is auto-generated for it.
+    - `BoostQuestion.Translation.optionKeys()`/`mediaKinds()` — reads only each option's `id` (needed
+      to validate `correctOptionKey` is among them and to store `option_keys`) and each block's bare
+      `type` discriminator (needed for `media_kinds`); no markdown, no asset id, no alt text is ever
+      modelled.
+  - **Decision recorded, not guessed:** `QuestionValidator`'s domain-code check takes a caller-supplied
+    allowlist that defaults to empty, meaning "accept any non-blank value." Plan §4.1 says the domain
+    code comes from "Boost's subject taxonomy (6 codes)," but those six codes are never actually listed
+    anywhere in either repo, and — unlike `topicKey`, which Plan §13.2 #7 gives a real endpoint for
+    (`GET /v1/delivery/topics`) — there is no Boost endpoint that enumerates the domain taxonomy.
+    Hardcoding a guessed list of six values would silently exclude every question tagged with a real,
+    unanticipated seventh code. **Open question for the Boost owner or Eric:** what are the actual six
+    domain codes, so `theory.content.known-domain-codes` can be configured with them and this check
+    tightened from "present" to "present and recognised."
+- **Tests:** new unit tests for every validation rule (each exclusion reason individually), the
+  difficulty→level table, home-lesson resolution (same lesson, different lessons same unit, different
+  units, and the empty-memberships error case), and the two client-model derivations
+  (`optionKeys`/`mediaKinds`/`hasContent`). `./gradlew test` → full suite still green (see commit for
+  the exact count).
+- **Deviations from the plan:** none beyond the domain-allowlist decision above.
+- **Issues found / open risks:** the domain-code taxonomy question above.
+- **Ready to continue:** YES. The remaining half of P3.T4 — the data layer for P3.T2's tables, the
+  actual `ContentSyncService.sync(now, full)` orchestration (change feed, full resync, release
+  creation, upsert), and its Testcontainers acceptance test — is real, substantial work on its own and
+  was deliberately left as a separate, clean next slice rather than rushed in the same pass.
+- **Next task:** P3.T4 (part 2): data layer + `ContentSyncService` + acceptance test.
