@@ -1,12 +1,15 @@
 """App-level fixtures.
 
-The route tests run the real stack (routers → service → ContentCache →
-BoostClient → httpx) with only the edges replaced:
+The API tests run the real app (middleware, error handlers, auth and locale
+dependencies, health routes) with only the edges replaced:
 
-* Boost and Kinde JWKS are mocked with respx,
-* Redis is fakeredis,
-* the snapshot store is in memory,
+* Kinde JWKS (and any Boost call) is mocked with respx,
 * readiness checks are scripted.
+
+Until the public theory API ships (plan §7.3, P6), the app has no ``/v1``
+route. The harness therefore mounts ``PROBE_PATH``, a **test-only** route that
+depends on the real ``CurrentLearner`` and ``Locale`` dependencies, so the
+authentication boundary is still exercised end to end through HTTP.
 """
 
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -16,24 +19,32 @@ from dataclasses import dataclass, field
 import httpx
 import pytest
 import respx
-from fakeredis import FakeAsyncRedis, FakeServer
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
-from boost_bridge.cache.redis_cache import RedisCache
-from boost_bridge.clients.boost.client import BoostClient
+from boost_bridge.api.deps import CurrentLearner, Locale
 from boost_bridge.container import Services
 from boost_bridge.core.config import Settings
+from boost_bridge.core.context import learner_token_var
 from boost_bridge.core.security import JwksCache, TokenVerifier
 from boost_bridge.main import create_app
-from boost_bridge.services.content_cache import ContentCache
-from boost_bridge.services.content_service import ContentService
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
-from tests.fakes import FakeClock, InMemorySnapshots
 
 BOOST = "https://boost.test"
 ASSETS = "https://cdn.boost.test/assets"  # fallback when an item has no assetBaseUrl
-ITEM_ASSETS = "https://assets.boost.test/a"  # factories put this on modules
 SIGNING_KEY = SigningKey("test-key")
+PROBE_PATH = "/v1/__probe"
+
+_probe = APIRouter()
+
+
+@_probe.get(PROBE_PATH)
+async def probe(learner: CurrentLearner, locale: Locale) -> dict[str, object]:
+    """Echo what the auth and locale dependencies resolved for this request."""
+    return {
+        "sub": learner.sub,
+        "locale": locale,
+        "tokenForwardable": learner_token_var.get(None) is not None,
+    }
 
 
 @dataclass
@@ -43,9 +54,6 @@ class Harness:
     app: FastAPI
     client: httpx.AsyncClient
     boost: respx.MockRouter
-    snapshots: InMemorySnapshots
-    redis_server: FakeServer
-    clock: FakeClock
     readiness: dict[str, Exception | None] = field(default_factory=dict)
 
     def auth(self, **claims: object) -> dict[str, str]:
@@ -76,9 +84,6 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
     @asynccontextmanager
     async def factory(**setting_overrides: object) -> AsyncIterator[Harness]:
         settings = make_settings(**setting_overrides)
-        snapshots = InMemorySnapshots()
-        redis_server = FakeServer()
-        clock = FakeClock()
         readiness: dict[str, Exception | None] = {"database": None, "redis": None}
 
         with respx.mock(assert_all_called=False) as mock:
@@ -86,22 +91,7 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
 
             @asynccontextmanager
             async def services_factory(s: Settings) -> AsyncIterator[Services]:
-                async with (
-                    httpx.AsyncClient(base_url=BOOST) as boost_http,
-                    httpx.AsyncClient() as jwks_http,
-                ):
-                    redis_cache = RedisCache(
-                        FakeAsyncRedis(server=redis_server),
-                        hard_ttl_seconds=s.cache_hard_ttl_seconds,
-                        negative_ttl_seconds=s.cache_negative_ttl_seconds,
-                    )
-                    cache = ContentCache(
-                        BoostClient.from_settings(boost_http, s),
-                        redis_cache,
-                        snapshots,
-                        soft_ttl_seconds=s.cache_soft_ttl_seconds,
-                        clock=clock,
-                    )
+                async with httpx.AsyncClient() as jwks_http:
 
                     def check(name: str) -> Callable[[], Awaitable[None]]:
                         async def run() -> None:
@@ -111,7 +101,6 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         return run
 
                     yield Services(
-                        content=ContentService(cache, asset_base_url=s.asset_base_url),
                         verifier=TokenVerifier(
                             JwksCache(jwks_http, s.kinde_jwks_uri),
                             issuer=s.kinde_issuer_uri,
@@ -121,13 +110,13 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         else None,
                         readiness_checks={name: check(name) for name in readiness},
                     )
-                    await cache.aclose()
 
             app: FastAPI = create_app(settings, services_factory)
+            app.include_router(_probe)
             async with app.router.lifespan_context(app):
                 transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                    yield Harness(app, client, mock, snapshots, redis_server, clock, readiness)
+                    yield Harness(app, client, mock, readiness)
 
     return factory
 

@@ -4,8 +4,9 @@
 
 The **BFF** (backend for frontend) of the Fordona Theory App, plus — from P2 onwards — the **Boost stub**.
 
-- **Today (Phase 1):** a read-through content API over the Boost CMS delivery API (modules, lessons,
-  questions), with auth, caching and RFC 7807 errors.
+- **Today:** only health probes are routed. The Phase 1 catalogue routes were retired (P1.T1); the
+  auth/locale dependencies, Boost client, read-through cache and snapshot store remain as the
+  building blocks for P6.
 - **Target (theory first shipment):** the public API the mobile app calls. It composes the
   fordona-engine's decisions (question *references*, lock state, grading feedback, progress) with
   answer-free bodies and theory from Boost, and resolves media asset ids to CDN URLs. It never holds
@@ -39,7 +40,7 @@ src/boost_bridge/
   main.py            app factory (create_app) + lifespan; `app` is built lazily
   container.py       composition root: builds clients, cache, DB, verifier; owns their lifecycle
   api/               routers (api/routes/*), dependencies (deps.py), OpenAPI error docs (responses.py)
-  services/          use cases, upstream→API mappers, read-through cache, sequencer extension point
+  services/          read-through content cache (stale-while-revalidate + last-known-good snapshot)
   clients/boost/     typed async Boost delivery client + its error mapping
   cache/             fail-open Redis wrapper, cache keys
   db/                last-known-good snapshot table, repository, engine
@@ -159,6 +160,9 @@ Dockerfile's `runtime` stage must not contain `src/boost_stub`. The stub runs on
 ## Known gaps (as of 2026-11-02)
 
 - There is **no CI configuration** in the repo yet; tracker items that say "wired into CI" need one.
-- `README.md` still describes Railway deployment and the Phase 1 routes; the plan deploys on Dokploy
-  and retires `/v1/modules*`, `/v1/questions*` and `/v1/lessons/{id}/questions` (P1.T1).
+- `README.md` still describes Railway deployment; the plan deploys on Dokploy.
+- FastAPI 0.143 wraps included routers in `app.routes`: never filter `app.routes` on `APIRoute` to
+  list endpoints (it silently returns nothing). Use `app.openapi()["paths"]`.
+- Until P6 there is no `/v1` route; API tests reach the auth/locale dependencies through the
+  test-only probe route mounted in `tests/conftest.py`.
 - Local integration tests need a running Docker daemon.

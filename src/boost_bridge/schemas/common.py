@@ -1,6 +1,5 @@
 """Shared API schemas. JSON is camelCase to match fordona-engine and Boost."""
 
-from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,22 +20,6 @@ ContentId = Annotated[
 
 class APIModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, frozen=True)
-
-
-class Localized(APIModel):
-    locale: str | None = Field(description="Locale this representation is in.", examples=["sv-SE"])
-    available_locales: list[str] | None = Field(
-        default=None,
-        description="Locales this content is published in, when Boost provides them.",
-    )
-
-
-class Page[ItemT: BaseModel](APIModel):
-    items: list[ItemT]
-    total: int = Field(ge=0)
-    page: int = Field(ge=1)
-    page_size: int = Field(ge=1)
-    as_of: datetime | None = Field(default=None, description="Upstream snapshot time.")
 
 
 class FieldError(APIModel):

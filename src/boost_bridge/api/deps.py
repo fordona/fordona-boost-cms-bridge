@@ -3,7 +3,7 @@
 from typing import Annotated
 
 import structlog
-from fastapi import Depends, Header, Query, Request, Response
+from fastapi import Depends, Header, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from boost_bridge.container import Services
@@ -12,7 +12,6 @@ from boost_bridge.core.context import learner_token_var
 from boost_bridge.core.errors import UnauthorizedError, ValidationFailedError
 from boost_bridge.core.locale import UnsupportedLocaleError, resolve_locale
 from boost_bridge.core.security import Learner
-from boost_bridge.services.content_service import ContentService, Served
 
 _bearer = HTTPBearer(
     auto_error=False,
@@ -31,10 +30,6 @@ def get_settings(request: Request) -> Settings:
 def get_services(request: Request) -> Services:
     services: Services = request.app.state.services
     return services
-
-
-def get_content_service(services: Annotated[Services, Depends(get_services)]) -> ContentService:
-    return services.content
 
 
 async def get_current_learner(
@@ -76,19 +71,5 @@ def get_locale(
         ) from None
 
 
-def serve[T](response: Response, served: Served[T], locale: str) -> T:
-    """Attach response headers that describe how the content was served."""
-    response.headers["Content-Language"] = locale
-    response.headers["Vary"] = "Accept-Language, Authorization"
-    if served.stale:
-        response.headers["X-Content-Stale"] = "true"
-    return served.value
-
-
 CurrentLearner = Annotated[Learner, Depends(get_current_learner)]
 Locale = Annotated[str, Depends(get_locale)]
-Content = Annotated[ContentService, Depends(get_content_service)]
-PageNumber = Annotated[int, Query(ge=1, le=10_000, description="1-based page number.")]
-PageSize = Annotated[
-    int, Query(alias="pageSize", ge=1, le=100, description="Items per page (max 100).")
-]

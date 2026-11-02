@@ -1,11 +1,13 @@
-"""The catalogue routes that exposed the question bank are gone (plan §15, R-11).
+"""The catalogue routes that exposed the question bank and paid theory are gone
+(plan §15, R-11, R-8).
 
 Questions reach the app only inside a lesson attempt, chosen and checked by the
-engine. These tests keep the retired routes from coming back.
+engine, and theory only after the engine's lock check. Until that public API
+ships (P6), the service serves its health probes and nothing else. These tests
+keep the retired routes from coming back.
 """
 
 import pytest
-from fastapi.routing import APIRoute
 
 from boost_bridge.main import create_app
 from tests.conftest import Harness, make_settings
@@ -15,6 +17,8 @@ RETIRED_PATHS = frozenset(
         "/v1/questions",
         "/v1/questions/{questionId}",
         "/v1/questions/{questionId}/revisions/{version}",
+        "/v1/lessons",
+        "/v1/lessons/{lessonId}",
         "/v1/lessons/{lessonId}/questions",
         "/v1/modules",
         "/v1/modules/{moduleId}",
@@ -23,20 +27,22 @@ RETIRED_PATHS = frozenset(
 )
 
 
+def _api_paths() -> set[str]:
+    # FastAPI >= 0.14x keeps included routers as wrappers in ``app.routes``, so a
+    # filter on ``APIRoute`` sees nothing. The OpenAPI document is the public view
+    # of every routed operation (no route here sets include_in_schema=False).
+    # ``test_route_table_serves_only_health_probes`` doubles as the positive
+    # control that this set is never silently empty.
+    app = create_app(make_settings())
+    return set(app.openapi()["paths"])
+
+
 def test_route_table_has_no_retired_path() -> None:
-    app = create_app(make_settings())
-
-    paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
-
-    assert paths.isdisjoint(RETIRED_PATHS)
+    assert _api_paths().isdisjoint(RETIRED_PATHS)
 
 
-def test_route_table_has_no_question_or_module_path() -> None:
-    app = create_app(make_settings())
-
-    paths = {route.path for route in app.routes if isinstance(route, APIRoute)}
-
-    assert not [p for p in paths if "/questions" in p or p.startswith("/v1/modules")]
+def test_route_table_serves_only_health_probes() -> None:
+    assert _api_paths() == {"/health/live", "/health/ready"}
 
 
 @pytest.mark.parametrize(
@@ -45,6 +51,8 @@ def test_route_table_has_no_question_or_module_path() -> None:
         "/v1/questions",
         "/v1/questions/100",
         "/v1/questions/100/revisions/4",
+        "/v1/lessons",
+        "/v1/lessons/1",
         "/v1/lessons/1/questions",
         "/v1/modules",
         "/v1/modules/1",

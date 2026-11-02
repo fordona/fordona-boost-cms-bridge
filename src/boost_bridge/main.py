@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
 from boost_bridge import __version__
-from boost_bridge.api.router import api_router
 from boost_bridge.api.routes import health
 from boost_bridge.container import ServicesFactory, build_services
 from boost_bridge.core.config import Settings, get_settings
@@ -24,14 +23,13 @@ from boost_bridge.core.middleware import RequestContextMiddleware
 log = get_logger(__name__)
 
 _DESCRIPTION = """
-Published Theory content (lessons a.k.a. chapters) from the Boost CMS, for the
-Fordona Theory App. Questions reach the app only inside a lesson attempt.
+The Fordona Theory App's backend for frontend (BFF).
 
-* Every `/v1` route requires a Kinde bearer token.
-* Locale is chosen by `?locale=` or `Accept-Language` (`sv-SE` default, `en-GB`).
+Until the theory first-shipment public API ships (plan §7.3), the service exposes
+only its health probes: the earlier content catalogue routes served the question
+bank and paid theory with no entitlement check, and were retired (plan §15).
+
 * Errors are RFC 7807 `application/problem+json`, carrying `errorCode` and `correlationId`.
-* `X-Content-Stale: true` marks content served from the last-known-good copy
-  while Boost is unavailable.
 """
 
 
@@ -74,7 +72,6 @@ def create_app(
     app.state.settings = settings
 
     register_exception_handlers(app)
-    app.include_router(api_router)
     app.include_router(health.router)
 
     if settings.cors_allowed_origins:
