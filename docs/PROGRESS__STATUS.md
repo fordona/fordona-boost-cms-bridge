@@ -645,3 +645,82 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   tests (validation rules, level mapping, etc.) don't need either.
 - **Next task:** P3.T4 (content validation and sync service) — the next task whose dependencies (P3.T2,
   P3.T3) are now both ticked.
+
+
+### 2026-11-02 · P0.T3 (partial) · Real Boost tokens received — production, no staging yet
+
+- **Status:** PARTIAL — the credentials half of P0.T3 is resolved; the rest (Kinde audience, internal
+  token, a delivery date agreement) is still open.
+- **What happened:** the Boost owner sent a grading token and a "service" token, explicitly stating these
+  are the **production** credentials and that Boost has no staging environment yet ("let me fix that now").
+  Both tokens were verified read-only before any further use (never committed): the service token
+  authenticates on `/v1/delivery/modules` (200) and is correctly refused on a grading route (401); the
+  grading token authenticates correctly on a reserved probe id (404, same convention the Boost stub's own
+  `auth.py` uses). Scope separation holds.
+- **Decision recorded (2026-11-02, owner):** use these two prod tokens for the bounded P2.T1/P2.T2
+  acceptance runs now, swap to real staging credentials once the owner's staging environment exists. **Not**
+  wired into any continuously-running dev/staging service config — this was a one-off, explicit scope
+  agreed with the owner, not a standing arrangement.
+- **Open naming question, not yet resolved:** P0.T3 asks for three credentials — a delivery token for the
+  BFF, and a delivery token **and** a grading token for the engine. The owner sent two: a grading token and
+  one "service token". Assumed (not confirmed) that the one service token covers delivery-scope reads for
+  both the BFF and the engine — reasonable, but worth a one-line confirmation from the owner rather than
+  leaving it implicit.
+- **Ready to continue:** the credentials are usable for read-only verification and the two acceptance runs
+  below; P0.T3's remaining items (Kinde audience, internal token, O-1 delivery date) are still open.
+
+### 2026-11-02 · P2.T1 (acceptance) · Contract suite run against real Boost with real tokens
+
+- **Status:** DONE — acceptance criterion fully met.
+- **What was done:** ran `tests/contract/boost_content_v1` against `https://boost-api.fordona.io` with the
+  real service token (as `CONTRACT_DELIVERY_TOKEN`) and the real grading token (as `CONTRACT_GRADING_TOKEN`).
+  `CONTRACT_EXPIRED_CURSOR` left unset (no way to get one from real Boost yet) — that one test fails with
+  its own instructions, as designed.
+- **Result:** 50 failed, 2 passed, 0 errors. Confirms the prediction recorded in the earlier (placeholder-token)
+  P2.T1 entry exactly: with real tokens, failures are genuine **404s** ("Published content not found." /
+  route not found) on every §13-only endpoint — not blanket 401s — proving Boost's existing auth works and
+  §13 itself simply doesn't exist there yet. One failure came back as a bare `401 authentication_required`
+  on the new grading batch route (`/v1/grading/questions/revisions`) rather than a 404 — consistent with an
+  unmatched route falling through to a generic auth wall rather than Boost's normal "not found" handler, not
+  a credential problem (the same grading token works correctly elsewhere in the run). The 2 passes are the
+  pre-existing token-scope tests (a token rejected on the wrong endpoint is the expected result).
+- **This closes the "does not yet prove the assertions are meaningful" caveat** from the placeholder-token
+  run: the suite now demonstrably tells a real auth failure apart from a real "endpoint doesn't exist yet"
+  failure.
+- **Ready to continue:** YES for P2.T1 itself. Boost implementing §13 for real (P9.T1, external) is what
+  turns these 404s into passes — nothing further for us to do here until then.
+- **Next task:** P2.T2's own acceptance (below), already unblocked by the same tokens.
+
+### 2026-11-02 · P2.T2 (acceptance) · Live generator run — Boost has zero published content
+
+- **Status:** DONE, with a significant finding — the generated files are genuinely, correctly empty.
+- **What was done:** ran `scripts/generate_stub_templates.py` against real Boost with the real service
+  token. `GET /v1/delivery/modules` (and, checked directly afterward, `/lessons` and `/questions` too) all
+  return `{"items": [], "total": 0}`. The generator produced `templates.json`/`synthetic.json` with empty
+  arrays, `generation 1 (changed)`, and a warning that no block type could be demonstrated (no lesson existed
+  to need a top-up). **Confirmed this is not a tooling bug**: re-ran the generator a second time and diffed
+  byte-for-byte against the first run — identical, satisfying the determinism acceptance check even though
+  the content is empty.
+- **Interpretation:** Boost has nothing published yet — either nothing authored, or everything still in
+  draft (§13.1: drafts are invisible to delivery endpoints regardless of token). This is `P9.T2`'s remit
+  ("Eric's content in Boost"), not something we can act on from either repo.
+- **Practical consequence for P2.T3/P2.T4:** the Boost stub, once deployed, currently has **nothing to
+  serve** for `question-templates`/`topics` — not real content, and no synthetic `[DEMO]` content either
+  (the top-up is per-lesson, and there are zero lessons). This was already a known risk in the P2.T3 entry
+  ("stub-data/templates.json/synthetic.json do not exist yet"); now they exist, and they're empty for a
+  different, upstream reason than originally expected.
+- **Decision recorded (2026-11-02, owner):** commit the empty files now rather than wait, to prove the
+  generator pipeline works end-to-end against real Boost, with `stub-data/README.md` added documenting
+  exactly why they're empty so a future reader doesn't mistake it for a bug. Re-run once Eric publishes
+  anything.
+- **Field-naming caveat still open, not resolved by this run:** `BoostContentClient`'s (engine, P3.T3)
+  assumed field names (`shared.lessonId`, `shared.difficulty`, `topicKey`, a template's `shared.sort`, etc.)
+  remain **unverified against a real payload** — there is still nothing in Boost to check them against. Same
+  caveat `boost_bridge`'s own models carry. Revisit the moment any real content exists.
+- **Tests:** `uv run python -m scripts.generate_stub_templates` (twice) → byte-identical
+  `stub-data/templates.json`/`synthetic.json`; both `{"templates": []}` / `{"questions": []}` respectively.
+- **Ready to continue:** YES, mechanically. **Blocked on real content** for this to mean anything in
+  practice (P9.T2, external).
+- **Next task:** P2.T4 (deploy the stub to staging — EXT/Dokploy, and now also waits on the Boost owner
+  actually standing up a staging Boost tenant, per their own message today) or P3.T4 (engine: content
+  validation and sync service), whichever the owner picks next.

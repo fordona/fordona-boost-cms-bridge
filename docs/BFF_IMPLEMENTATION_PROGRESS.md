@@ -159,8 +159,10 @@ every repository the plan touches:
 
 - [ ] **P2 — phase done**
 
-- [ ] **P2.T1 Contract test suite for §13** · Repo: BFF · Dep: P0.T1 · Plan §13 — PARTIAL (2026-11-02): code and
-  tests done; acceptance waits for real Boost tokens (P0.T3), see `PROGRESS__STATUS.md`
+- [x] **P2.T1 Contract test suite for §13** · Repo: BFF · Dep: P0.T1 · Plan §13 — DONE (2026-11-02): run
+  against real Boost with real tokens (prod, no staging yet — owner decision, see `PROGRESS__STATUS.md`):
+  50 failed / 2 passed / 0 errors, every failure a genuine 404 ("§13 doesn't exist yet"), none an auth
+  failure. Proves the suite is meaningful; Boost itself implementing §13 (P9.T1) is the only thing left.
   - [x] Create `tests/contract/boost_content_v1/`, parametrised by base URL + tokens from env
         (`CONTRACT_BOOST_BASE_URL`, `CONTRACT_DELIVERY_TOKEN`, `CONTRACT_GRADING_TOKEN`). Skip when unset.
   - [x] Tests per endpoint (§13.2):
@@ -188,9 +190,12 @@ every repository the plan touches:
   - **Acceptance:** the suite runs and **fails cleanly** (it doesn't error) against today's Boost, which proves the
     assertions are meaningful; it is wired into CI as a separate job.
 
-- [ ] **P2.T2 Template generator** · Repo: BFF · Dep: P0.T3 · Plan §4.5 — PARTIAL (2026-11-02, started early on
-  the owner's instruction): code and unit tests done; the live run and the committed files wait for the Boost
-  delivery token (P0.T3), see `PROGRESS__STATUS.md`
+- [x] **P2.T2 Template generator** · Repo: BFF · Dep: P0.T3 · Plan §4.5 — DONE (2026-11-02): live run against
+  real Boost, `stub-data/` committed. **Significant finding:** Boost has zero published content right now, so
+  both files are genuinely (and correctly — determinism re-verified) empty; the "every block type" coverage
+  below is proven by unit tests against fixtures, not by this live run, since there's no real lesson to
+  demonstrate it against. Blocked on Eric publishing content (P9.T2) for the live output to mean anything in
+  practice — re-run then. See `PROGRESS__STATUS.md`.
   - [x] `scripts/generate_stub_templates.py`: reads published modules, lessons and questions from today's Boost (delivery
         token from env).
   - [x] Per lesson:
@@ -209,9 +214,9 @@ every repository the plan touches:
     - [x] id range.
   - **Acceptance:** the generated files are committed, and the generator re-run produces no diff.
 
-- [ ] **P2.T3 Boost stub service** · Repo: BFF · Dep: P2.T1, P2.T2 · Plan §4.5, §13 — PARTIAL (2026-11-02,
-  started early on the owner's instruction, both deps still PARTIAL): one sub-item deliberately deferred (the
-  in-memory LRU), everything else done and verified; see `PROGRESS__STATUS.md`.
+- [x] **P2.T3 Boost stub service** · Repo: BFF · Dep: P2.T1, P2.T2 · Plan §4.5, §13 — DONE (2026-11-02):
+  both deps are now DONE too. One sub-item deliberately deferred (the in-memory LRU), everything else done
+  and verified; see `PROGRESS__STATUS.md`.
   - [x] Package `src/boost_stub/` with its own FastAPI app (`boost_stub.main:app`), its own settings
         (`STUB_UPSTREAM_BOOST_URL`, `STUB_DATA_DIR`, `STUB_SQLITE_PATH`, `STUB_POLL_SECONDS=60`).
   - [x] Endpoints:
