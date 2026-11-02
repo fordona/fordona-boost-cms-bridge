@@ -783,3 +783,69 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   creation, upsert), and its Testcontainers acceptance test — is real, substantial work on its own and
   was deliberately left as a separate, clean next slice rather than rushed in the same pass.
 - **Next task:** P3.T4 (part 2): data layer + `ContentSyncService` + acceptance test.
+
+### 2026-11-02 · P3.T4 (part 2 of 2) · Content sync service and its data layer
+
+- **Status:** DONE — P3.T4 is now fully complete.
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · ba16efdb
+- **What was done:**
+  - The full Spring Data JDBC layer for P3.T2's tables: entities, repositories (mostly
+    `@Modifying @Query` upserts with real `ON CONFLICT`, since the primary keys are Boost's own
+    string ids, not auto-generated), one MapStruct mapper, and a single `TheoryContentStore` —
+    the content read model is one cohesive concept, not seven unrelated ones.
+  - `ContentSyncService.sync(Instant now, boolean full)`: polls the change feed, re-lists Boost's
+    structure, validates with P3.T4-part-1's rules, upserts, and creates a `content_release` only
+    when something actually changed.
+  - **A real bug caught before writing any Java, by research alone:** `V1_0_16`'s five JSON
+    columns were `JSONB`, but this engine has **no Spring Data JDBC JSONB converter registered
+    anywhere** — confirmed by an existing migration's own comment explaining why it deliberately
+    used `TEXT` for the identical reason (nothing queries *into* the JSON, only reads it back
+    whole). Fixed with a follow-up migration (`V1_0_16_1`) before any entity touched those columns,
+    rather than editing the already-committed `V1_0_16`.
+  - **A real ordering bug, caught by a failing test, not by review:** lesson rows must exist before
+    any question or template can reference them (foreign keys), but a lesson's own VISIBLE/HIDDEN
+    status can only be computed *after* its templates (which themselves depend on their questions)
+    have been processed — the reverse of what the FK demands. Fixed with the same two-phase
+    write pattern already used for templates: the structural fields land early via a dedicated
+    `upsertStructure()` that never touches `status`; `status` is set once, later, via its own
+    `updateStatus()`.
+  - **A second bug in the first fix, caught by the test suite itself:** the first attempt at that
+    two-phase write re-asserted a placeholder status on every sync, including re-syncs of
+    completely unchanged data — which would have made the "did anything change" signal always
+    report true, breaking the single acceptance check that matters most. Caught by writing the
+    "second sync, identical data, no new release" test *before* trusting the fix, and watching it
+    fail for exactly the reason described.
+  - **Change detection is exact, not approximate**: every upsert's `ON CONFLICT ... DO UPDATE` is
+    guarded with `IS DISTINCT FROM` against every column, and the repository methods return the
+    real affected-row count (Postgres's own default is to report a row as "touched" on every
+    conflict, identical values or not — that default would have made every sync look like a
+    change). Template membership (a delete-then-reinsert, which `ON CONFLICT` can't express) is
+    diffed explicitly in the store before touching the table at all.
+  - **Deliberate scope decision** (not what Plan §4.3's diagram literally shows): the change feed
+    is consulted only to decide *whether* to resync, not to scope *which* ids to refetch — any
+    reported change triggers a full re-list of modules, lessons, templates and questions, rather
+    than the batch-scoped incremental fetch the plan describes. At today's real content scale,
+    confirmed against Boost's own admin dashboard (7 modules, 104 chapters, 712 questions), that's
+    a handful of HTTP calls per sync, not a performance concern. This is real, deliberately
+    deferred work for when the catalogue grows enough that the assumption stops holding — not
+    forgotten, just not needed yet.
+- **Tests:**
+  - `TheoryContentStoreTest` (12 tests, real Postgres via Testcontainers): every store method
+    round-trips correctly, including the JSON (de)serialization, the ordered template membership,
+    the `HomeLessonResolver`-feeding membership query, and — the one that matters for the
+    acceptance criterion — that an upsert called twice with identical data reports no change the
+    second time.
+  - `ContentSyncServiceTest` (3 tests, same real-Postgres base, `BoostContentClient` mocked with a
+    small hand-built fixture mirroring the shape of the BFF repo's own stub fixtures): a full sync
+    into an empty database creates a release and gets the HIDDEN-template → HIDDEN-lesson cascade
+    right (not just isolated field writes); a second identical full sync creates no new release;
+    an incremental sync against an empty change feed creates no release and still advances the
+    cursor. This is the tracker's own P3.T4 acceptance test.
+  - Full suite: `./gradlew test` → **1429 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** the change-feed scoping simplification above, logged for when
+  content volume grows.
+- **Issues found / open risks:** none new beyond what P3.T4 part 1 already flagged (the domain-code
+  allowlist question).
+- **Ready to continue:** YES.
+- **Next task:** P3.T5 (sync jobs — `ExternalUseCase` + scheduler wiring this service into
+  `JobRunner`) is the natural next step; P3.T6/T7/T8 are also now unblocked.

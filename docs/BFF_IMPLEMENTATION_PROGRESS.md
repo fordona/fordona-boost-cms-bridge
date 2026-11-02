@@ -333,19 +333,20 @@ every repository the plan touches:
   - **Acceptance:** a WireMock suite covers every method. — met with `MockRestServiceServer` (8 tests, all
     public methods covered).
 
-- [ ] **P3.T4 Content validation and sync service** · Repo: ENG · Dep: P3.T2, P3.T3 · Plan §4.3, §4.4 —
-  PARTIAL (2026-11-02, part 1 of 2): the pure validation/derivation logic below is done and tested; the
-  sync orchestration itself (`ContentSyncService`, the data layer, the acceptance test) is not started.
-  See `PROGRESS__STATUS.md`.
-  - [ ] `ContentSyncService.sync(Instant now, boolean full)`:
-    - read the change feed from `content_release.change_cursor`;
-    - fetch the changed ids;
-    - fetch new grading revisions in batches;
-    - upsert the read model;
-    - apply validation;
-    - store the new cursor;
-    - create a new `content_release` **only if something changed**.
-  - [ ] **Full resync:** `full=true` resets the cursor and reads all lists (`pageSize` 250). It runs on
+- [x] **P3.T4 Content validation and sync service** · Repo: ENG · Dep: P3.T2, P3.T3 · Plan §4.3, §4.4 —
+  DONE (2026-11-02). See `PROGRESS__STATUS.md` for both parts' full writeups, including two real bugs
+  (a missing JSONB-converter gap, and a lesson/template write-ordering bug) caught before or by tests.
+  - [x] `ContentSyncService.sync(Instant now, boolean full)`:
+    - [x] read the change feed from `content_release.change_cursor`;
+    - [x] fetch the changed ids — **deviation:** the feed only decides *whether* to resync; any
+          reported change triggers a full re-list rather than a batch-scoped fetch of just the
+          changed ids (deliberate, logged, fine at today's content scale);
+    - [x] fetch new grading revisions in batches;
+    - [x] upsert the read model;
+    - [x] apply validation;
+    - [x] store the new cursor;
+    - [x] create a new `content_release` **only if something changed**.
+  - [x] **Full resync:** `full=true` resets the cursor and reads all lists (`pageSize` 250). It runs on
         `CURSOR_EXPIRED` too.
   - [x] Validation rules (Plan §4.4):
     - [x] a question is EXCLUDED when its key isn't among its options, options aren't distinct, difficulty is
@@ -358,17 +359,16 @@ every repository the plan touches:
         default for now; `retry_policy.difficulty_level_map` (P4.T1) doesn't exist yet to read from instead.
   - [x] `home_lesson_id` = the lesson of the question's first template by sort.
   - [x] `media_kinds` derived from the block types in the prompt and options.
-  - [ ] Unit and lesson titles stored per locale. **No question text or theory stored** (Plan §6 notes). —
-        this is the sync service's job (not started); the validation/derivation logic above never reads or
-        stores title/theory text, only structural fields.
+  - [x] Unit and lesson titles stored per locale. **No question text or theory stored** (Plan §6 notes).
   - **Unit tests:**
     - [x] each validation rule;
     - [x] the level mapping;
     - [x] home lesson;
-    - [ ] no release when nothing changed;
-    - [ ] cursor advance.
+    - [x] no release when nothing changed;
+    - [x] cursor advance.
   - **Acceptance:** a Testcontainers test syncs the stub's fixtures (recorded responses) into an empty database; a
-    second sync creates no release.
+    second sync creates no release. — met (`ContentSyncServiceTest`, real Postgres, `BoostContentClient` mocked
+    with a hand-built fixture).
 
 - [ ] **P3.T5 Sync jobs (job module)** · Repo: ENG · Dep: P3.T4 · CLAUDE.md "Scheduled Jobs"
   - [ ] An `ExternalUseCase` in `learn/theory/usecase` exposing `syncTheoryContent(Instant now, boolean full)`.
