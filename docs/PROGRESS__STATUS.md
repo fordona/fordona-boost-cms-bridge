@@ -1445,3 +1445,83 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Issues found / open risks:** none new.
 - **Ready to continue:** YES.
 - **Next task:** P4.T6 (retry composer) — depends on P4.T5 (done) and P3.T7 (done).
+
+### 2026-11-03 · P4.T6 · Retry composer
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 8c7a8b31
+- **What was done:**
+  - `RetryComposer.compose(snapshot, lessonItems, currentLessonId, completedLessonIds, seenQuestionIds,
+    unitEntitled, policy, shuffleSeed)` — pure, no I/O, no `@Component`/Spring wiring at all (it's a
+    static method, like `NeighbourRanker`). Scope is deliberately narrow per the tracker's own split:
+    P4.T6 is the composer and its tests only; wiring it into `AttemptService` (calling it from phase
+    completion, persisting retry items, writing `retry_extras_short`) is explicitly P4.T7's job.
+  - `wrongSeeds` are derived internally from a single `lessonItems` input (every lesson-phase item,
+    correct and wrong) rather than taking "seeds" and "already-in-attempt" as two separate inputs —
+    filter (c) needs the *full* lesson item set (a correct item's question must never resurface as a
+    "similar" item either), while only the wrong ones seed the round-robin walk and become repeat
+    items. One input serves both purposes without the caller needing to pre-split them.
+  - **Fully deterministic, not just "item order from a seed":** the tracker's own acceptance bar
+    ("deterministic order for the same attempt id") is a real test of purity, so every random choice
+    inside the composer — both repeat/similar items' shuffled option orders *and* the final
+    item-order shuffle — comes from one `java.util.Random` seeded from `shuffleSeed`, never
+    `SecureRandom`. `SecureRandom` would have made the composer non-deterministic and literally
+    impossible to pass that test; using it anywhere inside a function explicitly specified as "pure"
+    would have been the error, not a stylistic choice. Plan §5.3 point 4 only asks for the *item
+    order* to be seeded; extending that to option orders is this task's own correctness requirement,
+    not scope creep — a "pure composer" that calls `SecureRandom` isn't pure.
+  - **Filter (b) is hardcoded to "same level or one down, floor easy," not driven by
+    `policy.levelDropAllowed()`.** `levelDropAllowed` is a real, range-validated (0–2), per-scope
+    field on `retry_policy` (P4.T1) — so this is a genuine, visible gap: a config field a platform
+    admin can edit per-unit or per-lesson that this filter never reads. Not fixed silently, because
+    Plan §5.3 itself states the filter as a fixed "L or L−1" with no mention of the policy at all —
+    wiring it in would be *adding* a plan requirement, not implementing one. Logged here as an open
+    question for whoever next touches this filter: either the plan intends `levelDropAllowed` for
+    something else entirely (nothing else in the plan currently reads it), or filter (b) should read
+    it and the plan's own wording is the thing that's stale.
+  - "Valid and visible" (filter a) is checked against the *current* snapshot at retry-composition
+    time, not against whatever was true when `question_neighbour` was last rebuilt — a neighbour that
+    existed at the last release but has since been excluded or had its lesson hidden is treated as
+    absent (`snapshot.question(id)` / `snapshot.lesson(...)` both have to resolve), so a slightly
+    stale neighbour list can never serve broken content even between releases.
+- **Tests:**
+  - `RetryComposerTest` (20 tests, pure, no Spring context): the E table via `@ParameterizedTest`
+    (0→0, 1→2, 2→3, 3→5, 4→5, 10→5); every wrong item becomes exactly one repeat item at the same
+    pinned revision; no wrong items → no retry phase at all; each filter (a–f) proven in isolation by
+    giving a seed two neighbour candidates — one that should be rejected by that specific filter, one
+    that should pass — and asserting only the valid one is picked; `similar_scope=ALL` explicitly
+    allowing what `REACHED` would have blocked; the unseen-first fallback (a seen-only candidate is
+    skipped on pass 1 then picked up on pass 2 rather than left as a shortfall) and unseen-preferred-
+    over-seen-on-the-same-pass; the shortfall-down-to-repeats-only case with the exact `extrasShort`
+    value asserted; same-seed-same-inputs reproduces identical item order *and* identical option
+    orders; a 20-seed sweep confirms at least one seed reorders two repeat items differently (proving
+    the seed actually matters, not just that the function runs); and the tracker's own property test
+    — 20 different seeds over a deliberately overlapping 4-seed/6-candidate neighbour pool, each
+    checked for zero duplicate question ids among the composed items and zero similar items that
+    repeat a lesson question.
+  - One genuine test-writing mistake, caught by running the suite rather than by inspection: the
+    property test's first draft asserted "no composed item's question id is already in the lesson
+    attempt" across *all* composed items — which is wrong for repeat items by design (a repeat item's
+    whole point is reusing the wrong lesson item's own question id). Fixed by scoping that assertion to
+    similar items only, where it's actually a real property.
+  - Full suite: **not run to completion this session** — the environment's own `PATH` has a corrupted
+    entry (`C:\Program ` — truncated), which crashes `ServiceConnectionContextCustomizerFactory`'s
+    reflection during Spring context bootstrap for every `IntegrationTestBase` subclass, non-
+    deterministically, unrelated to any change in this repo (confirmed: two consecutive full-suite
+    runs failed identically across ~35 completely unrelated test classes spanning payments, school,
+    users and jobs; the same host's full suite had passed cleanly earlier this session before this
+    appeared). User's call: fix the `PATH` on their own machine later rather than block this task on
+    it. **This commit is verified only by `RetryComposerTest` run in isolation (20/20 passed)** — the
+    full-suite regression check for P4.T6 is outstanding and should be the first thing re-run once the
+    `PATH` is fixed, before trusting any later task's "full suite green" claim at face value.
+- **Deviations from the plan:** none in the composer's own behaviour — the determinism and filter-b
+  points above are documented interpretations of genuinely underspecified wording, not deviations from
+  anything the plan states explicitly.
+- **Issues found / open risks:**
+  - `levelDropAllowed` remains completely unwired (see above) — worth raising with whoever owns the
+    plan's retry-policy design before P4.T7 ships, since right now it's a config field with no effect.
+  - **Outstanding:** the full regression suite has not been re-run since before this task, due to the
+    host `PATH` corruption above. The next session (or the next task in this one) should run
+    `./gradlew test` to completion before trusting the suite is still green.
+- **Ready to continue:** YES, with the full-suite caveat above.
+- **Next task:** P4.T7 (phase completion) — depends on P4.T6, which is now done.

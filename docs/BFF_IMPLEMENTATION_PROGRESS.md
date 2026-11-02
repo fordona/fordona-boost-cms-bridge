@@ -598,28 +598,30 @@ every repository the plan touches:
     repository spy). — verified by a `@MockitoSpyBean` on `TheoryContentStore`: after priming
     `PinnedRevisionLoader`'s cache once, a full `answer()` call makes no further `findRevision` call.
 
-- [ ] **P4.T6 Retry composer** · Repo: ENG · Dep: P4.T5, P3.T7 · Plan §5.3
-  - [ ] `E = clamp(ceil(extras_per_wrong × W), extras_min, extras_max)`. W = 0 → no retry phase.
-  - [ ] Repeat items: the same pinned version, **re-shuffled** options.
-  - [ ] Similar items: round-robin over the seeds (wrong items in `seq` order). Walk each neighbour list and apply
+- [x] **P4.T6 Retry composer** · Repo: ENG · Dep: P4.T5, P3.T7 · Plan §5.3
+  - [x] `E = clamp(ceil(extras_per_wrong × W), extras_min, extras_max)`. W = 0 → no retry phase.
+  - [x] Repeat items: the same pinned version, **re-shuffled** options.
+  - [x] Similar items: round-robin over the seeds (wrong items in `seq` order). Walk each neighbour list and apply
         filters a–f **exactly** as Plan §5.3:
     - (a) valid and visible;
-    - (b) level in `{L, L−1}`, floor easy;
+    - (b) level in `{L, L−1}`, floor easy; — hardcoded, not `policy.levelDropAllowed()`; Plan §5.3 itself
+      states this filter as fixed. Logged as a known, deliberate gap — see `PROGRESS__STATUS.md`.
     - (c) not in this attempt;
     - (d) **unit entitled**, mandatory and not configurable;
     - (e) `similar_scope` REACHED / ALL;
     - (f) unseen first: two passes, with one indexed "seen" query.
-  - [ ] Stored order: shuffle repeat + similar items with a seed derived from `attemptId`.
-  - [ ] Shortfall recorded in `retry_extras_short`.
-  - [ ] Pure composer (inputs: snapshot, seeds, seen set, entitlement, policy); I/O stays in the service.
+  - [x] Stored order: shuffle repeat + similar items with a seed derived from `attemptId`.
+  - [x] Shortfall recorded in `retry_extras_short`. — the composer *computes* and returns the shortfall;
+        writing it onto `lesson_attempt.retry_extras_short` is P4.T7's I/O, same as every other write.
+  - [x] Pure composer (inputs: snapshot, seeds, seen set, entitlement, policy); I/O stays in the service.
   - **Unit tests:**
-    - [ ] the E table (W = 1 → 2, 2 → 3, 3 → 5, 4+ → 5);
-    - [ ] every filter on its own;
-    - [ ] the paid-unit question is never selected;
-    - [ ] the REACHED scope;
-    - [ ] the unseen-first fallback;
-    - [ ] the shortfall down to repeats only;
-    - [ ] deterministic order for the same attempt id.
+    - [x] the E table (W = 1 → 2, 2 → 3, 3 → 5, 4+ → 5);
+    - [x] every filter on its own;
+    - [x] the paid-unit question is never selected;
+    - [x] the REACHED scope;
+    - [x] the unseen-first fallback;
+    - [x] the shortfall down to repeats only;
+    - [x] deterministic order for the same attempt id.
   - **Acceptance:** a property test confirms the composer never returns duplicates or questions already in the
     attempt.
 
