@@ -849,3 +849,58 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P3.T5 (sync jobs — `ExternalUseCase` + scheduler wiring this service into
   `JobRunner`) is the natural next step; P3.T6/T7/T8 are also now unblocked.
+
+### 2026-11-02 · P3.T5 · Sync jobs (job module)
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 3b2e4845
+- **What was done:**
+  - `TheoryContentSyncExternalUseCase` (one method, `syncTheoryContent(Instant now, boolean full)`,
+    returning `Payload<Integer>` — 1 if a release was created, 0 if nothing changed), implemented by
+    `ContentSyncService` as a one-line proxy around its own `sync()`, per the ExternalUseCase
+    delegation rule.
+  - **Deviation from the tracker's literal wording, following the binding convention instead:** the
+    tracker says "An ExternalUseCase in `learn/theory/usecase`." Checked how every existing
+    cross-**tier** ExternalUseCase in this codebase is actually placed (e.g.
+    `PaymentReconciliationExternalUseCase`) — all of them live in the top-level `io.fordona.engine.client`
+    package, not in the callee module's own `usecase/` folder. A module's own local `usecase/`
+    package is reserved for same-tier sibling calls within `learn.*` (e.g. `LearnSubscriptionUseCase`,
+    called by `learn.chat`, `learn.content`, `learn.exam`, `learn.hub` — all tier 4 like
+    `learn.subscription` itself). The job module (tier 6) calling `learn.theory` (tier 4) is a
+    cross-tier call, the same shape as the payment example, so it went in `client/` to match. Nothing
+    was placed in `learn/theory/usecase` for this task — it stays empty until a genuine same-tier
+    sibling call needs it.
+  - Two schedulers in `job/scheduler/`, both routed through the existing `JobRunner` (locking, the
+    `job_run` audit row, Micrometer timers, error isolation — no new machinery needed):
+    - `theory-content-sync`, every 30 s, `full=false`;
+    - `theory-content-full-resync`, nightly at 03:00, `full=true` (Plan §4.3, R-12) — the same path
+      `ContentSyncService` already takes on `CURSOR_EXPIRED`, just scheduled rather than reactive.
+  - `fordona.jobs.configs.{theory-content-sync,theory-content-full-resync}` in `application.yml`,
+    each with its own `enabled` flag and `cron`, both overridable by env var, matching every other
+    job's convention exactly.
+- **Tests:**
+  - Per scheduler: the delegation (`runNow()` calls the use case with the right `full` value and
+    returns its response) and the tick method (`jobRunner.run(name(), this::runNow)` is actually what
+    gets called).
+  - The `@ConditionalOnProperty` gating, for both the global `fordona.jobs.enabled` switch and each
+    job's own flag — three cases each (both enabled → bean present; jobs globally disabled → absent;
+    this job individually disabled → absent). **Worth flagging the technique, since it's easy to get
+    wrong silently:** a hand-written `@Bean` factory method that does `return new
+    TheoryContentSyncScheduler(...)` would have compiled and *looked* like it tested the condition,
+    while actually bypassing it entirely — Spring only evaluates `@ConditionalOnProperty` on a
+    `@Component` class when something routes through its own conditional registration path. Used
+    `@Import(TheoryContentSyncScheduler.class)` instead, which does go through that path. No existing
+    test in this codebase tried this before, so there was no precedent to copy — worth the Javadoc
+    note left on the pattern for the next person who needs it.
+  - **Not written, and not standard for any job in this codebase today:** a live Testcontainers
+    assertion that `job_run` actually gets a row, or a ShedLock concurrency test proving two instances
+    can't both run the job. Checked — zero existing schedulers in this repo have either kind of test;
+    that machinery is `JobRunner`'s own responsibility and is exercised generically by its existing
+    tests, not re-verified per scheduler. Followed the same scope boundary rather than introducing a
+    new, heavier standard unilaterally.
+  - Full suite: `./gradlew test` → **1439 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** the `client/` vs. `learn/theory/usecase` placement above.
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P3.T6 (in-memory content snapshot) or P3.T7 (neighbour builder) — both now unblocked;
+  P3.T8 (platform endpoints) needs P3.T5 (done) and P3.T7.

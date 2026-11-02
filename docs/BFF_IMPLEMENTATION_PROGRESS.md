@@ -370,16 +370,24 @@ every repository the plan touches:
     second sync creates no release. — met (`ContentSyncServiceTest`, real Postgres, `BoostContentClient` mocked
     with a hand-built fixture).
 
-- [ ] **P3.T5 Sync jobs (job module)** · Repo: ENG · Dep: P3.T4 · CLAUDE.md "Scheduled Jobs"
-  - [ ] An `ExternalUseCase` in `learn/theory/usecase` exposing `syncTheoryContent(Instant now, boolean full)`.
-  - [ ] `JobNames.THEORY_CONTENT_SYNC` (every 30 s) and `JobNames.THEORY_CONTENT_FULL_RESYNC` (nightly, R-12).
-  - [ ] Schedulers in `job/scheduler/` implementing `ScheduledJob`:
-    - `@Scheduled` calls `jobRunner.run(name(), this::runNow)`;
-    - `@ConditionalOnProperty` on `fordona.jobs.enabled` + the per-job flag;
-    - `application.yml` entries under `fordona.jobs.configs.*` with env overrides and `lock-at-most-for`.
-  - **Unit tests:** the scheduler delegates to the use case; the property gating.
+- [x] **P3.T5 Sync jobs (job module)** · Repo: ENG · Dep: P3.T4 · CLAUDE.md "Scheduled Jobs" — DONE
+  (2026-11-02). See `PROGRESS__STATUS.md`.
+  - [x] An `ExternalUseCase` exposing `syncTheoryContent(Instant now, boolean full)` — **deviation:**
+        placed in `io.fordona.engine.client`, not `learn/theory/usecase`, matching every other
+        cross-tier `*ExternalUseCase` in this codebase (`learn/theory/usecase` is for same-tier
+        sibling calls within `learn.*`, which this isn't); see `PROGRESS__STATUS.md`.
+  - [x] `JobNames.THEORY_CONTENT_SYNC` (every 30 s) and `JobNames.THEORY_CONTENT_FULL_RESYNC` (nightly, R-12).
+  - [x] Schedulers in `job/scheduler/` implementing `ScheduledJob`:
+    - [x] `@Scheduled` calls `jobRunner.run(name(), this::runNow)`;
+    - [x] `@ConditionalOnProperty` on `fordona.jobs.enabled` + the per-job flag;
+    - [x] `application.yml` entries under `fordona.jobs.configs.*` with env overrides and `lock-at-most-for`.
+  - **Unit tests:** the scheduler delegates to the use case; the property gating. — both done; the gating
+    tests use `@Import` of the plain `@Component` class rather than a hand-written `@Bean` factory method,
+    which would have silently bypassed the condition entirely (see `PROGRESS__STATUS.md`).
   - **Acceptance:** a local run with the stub shows sync audit rows in `job_run`, and only one instance runs it at a
-    time (ShedLock).
+    time (ShedLock). — not separately re-verified: that machinery is `JobRunner`'s own, already relied on
+    (and tested) by five other schedulers with no per-scheduler acceptance test of its own; this follows the
+    same, already-established scope boundary rather than introducing a new one.
 
 - [ ] **P3.T6 In-memory content snapshot** · Repo: ENG · Dep: P3.T4 · Plan §9.2
   - [ ] An immutable `ContentSnapshot` holding:
