@@ -413,8 +413,9 @@ every repository the plan touches:
     Spring contexts: the provider holds no static/shared state, so two instances sharing only the real database
     *are* two independent "engine instances" for everything this check is actually testing; see `PROGRESS__STATUS.md`.
 
-- [ ] **P3.T7 Neighbour builder (metadata strategy)** · Repo: ENG · Dep: P3.T4 · Plan §8
-  - [ ] `NeighbourBuilder` runs after each release. For every ACTIVE question, rank ACTIVE candidates from the
+- [x] **P3.T7 Neighbour builder (metadata strategy)** · Repo: ENG · Dep: P3.T4 · Plan §8 — DONE
+  (2026-11-02). See `PROGRESS__STATUS.md`.
+  - [x] `NeighbourBuilder` runs after each release. For every ACTIVE question, rank ACTIVE candidates from the
         **whole bank** by these groups:
 
         | Group | Score |
@@ -427,15 +428,17 @@ every repository the plan touches:
 
         Within a group, sort by closest difficulty, then `questionId`. Keep the top 20. Write `question_neighbour`
         with `provider = metadata`.
-  - [ ] A `SimilarQuestionProvider` port: `neighbours(questionId)` read from the snapshot.
-  - [ ] `theory.similarity.source=metadata|vector`. Only metadata is implemented; vector is an empty extension point
-        with no code, documented.
+  - [x] A `SimilarQuestionProvider` port: `neighbours(questionId)` read from the snapshot.
+  - [x] `theory.similarity.source=metadata|vector`. Only metadata is implemented; vector is an empty extension point
+        with no code, documented. — **strengthened:** the property genuinely gates the bean via
+        `@ConditionalOnProperty` rather than existing as an inert switch; see `PROGRESS__STATUS.md`.
   - **Unit tests:**
-    - [ ] group ordering;
-    - [ ] tie-breaks are deterministic;
-    - [ ] excluded questions are never neighbours;
-    - [ ] at most 20.
-  - **Acceptance:** for the stub data, every question with ≥ 2 same-lesson peers has ≥ 2 neighbours.
+    - [x] group ordering;
+    - [x] tie-breaks are deterministic;
+    - [x] excluded questions are never neighbours;
+    - [x] at most 20.
+  - **Acceptance:** for the stub data, every question with ≥ 2 same-lesson peers has ≥ 2 neighbours. — met
+    against a real Postgres fixture (today's real Boost still has no content to run this against for real).
 
 - [ ] **P3.T8 Platform endpoints: sync and content report** · Repo: ENG · Dep: P3.T5, P3.T7 · Plan §7.6 · `.claude/rules/platform-module.md`
   - [ ] `learn/platform/api/TheoryContentPlatformController`:

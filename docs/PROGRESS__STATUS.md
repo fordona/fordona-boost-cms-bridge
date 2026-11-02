@@ -979,3 +979,58 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Next task:** P3.T7 (neighbour builder) — the snapshot's neighbour-list read path is already built
   and tested; P3.T7 only needs to populate `question_neighbour`. P3.T8 (platform endpoints) still
   needs P3.T7 too.
+
+### 2026-11-02 · P3.T7 · Neighbour builder (metadata strategy)
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 38d1439d
+- **What was done:**
+  - `NeighbourRanker` (pure): for one seed question, every other ACTIVE question in the whole bank is
+    scored into one of Plan §8's five groups — mutually exclusive, not summed: a candidate matching
+    both "same lesson, same topic" (1.0) and "same unit, same topic" (0.8) counts once, at 1.0. Within
+    the resulting list: score descending, then closest difficulty, then `questionId` — fully
+    deterministic. Top 20 kept.
+  - `NeighbourBuilder`: runs the ranker over the whole bank and replaces `question_neighbour`
+    wholesale (delete-all, bulk insert) — correct here, not a shortcut, since the whole table is
+    recomputed fresh from the current bank every time; there's no per-row "did this one change" to
+    preserve the way template membership has. Wired directly into `ContentSyncService`, called right
+    after a release is created and its revisions inserted — matching Plan §8's own flowchart, which
+    has the release trigger this immediately rather than on a separate schedule.
+  - `SimilarQuestionProvider` (the documented port) and `MetadataSimilarQuestionProvider` (the only
+    implementation), reading straight off `ContentSnapshot.neighboursOf(...)` — no query, no
+    computation at request time, matching the P3.T6 snapshot's whole design.
+  - **`theory.similarity.source` genuinely gates the bean**, not just in name: setting it to anything
+    other than `metadata` (including the plan's own documented future value, `vector`) removes
+    `MetadataSimilarQuestionProvider` via `@ConditionalOnProperty`, and since no
+    `VectorSimilarQuestionProvider` exists, that fails application startup loudly. Considered adding
+    the property as a documented-but-inert placeholder (closer to the tracker's literal phrasing) and
+    rejected it: a switch that silently does nothing when flipped is worse than not having the switch
+    at all. This way, a misconfiguration surfaces immediately as a missing-bean startup error instead
+    of a silent no-op.
+  - **Two bugs found while writing the integration tests, both in the tests themselves — confirmed
+    by fixing each and watching the real logic hold, not by weakening the test:**
+    - a copy-pasted unrelated `id()` call stood in for a unit id that was supposed to come from a
+      helper method's return value, causing a foreign-key violation unrelated to anything being
+      tested;
+    - an assertion assumed "no longer a neighbour of anyone" would show up as an empty list; it
+      actually (correctly) means no row in `question_neighbour` at all, so the lookup returns `null`,
+      not an empty list — fixed with `getOrDefault(..., List.of())` at the assertion, not in the
+      production code.
+- **Tests:**
+  - `NeighbourRankerTest` (pure, 11 tests): all five groups score correctly; no group match means not
+    a neighbour at all; a candidate matching multiple groups is scored once, at the higher value; the
+    seed is never its own neighbour; the difficulty/id tie-break ordering; the 20-cap; every result
+    carries `provider = "metadata"`.
+  - `NeighbourBuilderTest` (3 tests, real Postgres): **the tracker's own P3.T7 acceptance check** —
+    every question with ≥ 2 same-lesson-and-topic peers gets ≥ 2 neighbours; an `EXCLUDED` question is
+    never a candidate, neither as a seed nor as someone else's neighbour; calling `build` again after
+    content changes replaces the previous computation wholesale rather than leaving stale pairings
+    (the question that lost its shared topic correctly ends up with zero neighbours, not a leftover
+    pairing with its old partner).
+  - Full suite: `./gradlew test` → **1470 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** the `theory.similarity.source` always-gates-a-real-bean design above
+  (a strengthening, not a weakening, of what the tracker literally asked for).
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P3.T8 (platform endpoints: sync and content report) — now unblocked, since it depends
+  on P3.T5 (done) and P3.T7 (done). That's also the last task in Phase P3.
