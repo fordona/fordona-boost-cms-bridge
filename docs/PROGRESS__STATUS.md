@@ -904,3 +904,78 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P3.T6 (in-memory content snapshot) or P3.T7 (neighbour builder) — both now unblocked;
   P3.T8 (platform endpoints) needs P3.T5 (done) and P3.T7.
+
+### 2026-11-02 · P3.T6 · In-memory content snapshot
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 49c99911 (test-infra fix),
+  56ee0de3 (feature)
+- **What was done:**
+  - `ContentSnapshot`: an immutable, in-memory object per instance, holding every unit/lesson/template
+    in order, every `ACTIVE` question with its current revision (tags, level, keys, option keys,
+    explanation), and neighbour lists. `HIDDEN`/`EXCLUDED` rows are simply absent — exactly what
+    "never chosen for an attempt" requires.
+  - `ContentSnapshotProvider.get()`: single-flight, lock-free. A compare-and-set race on a
+    last-checked timestamp means at most one `get()` call per 30 s window actually queries
+    `max(release_id)` (and, only if it changed, rebuilds); every other concurrent caller in that
+    window returns whatever is already cached, without waiting on anything. No background thread, no
+    ShedLock — every instance refreshes itself, which is the whole point (Plan §9.2).
+  - **A design choice worth flagging:** the `AtomicReference` starts at `ContentSnapshot.empty()`,
+    never `null`. Today's real Boost has zero published content (still true as of this entry), so
+    "no release exists yet" is not a hypothetical edge case here — it's the actual current state —
+    and every caller downstream gets a valid, iterable, empty structure instead of a null check they'd
+    all have to remember to write.
+  - Two fields the tracker itself already called out as arriving later stay genuinely deferred: the
+    retry policy isn't modelled at all yet (P4.T1's `retry_policy` table doesn't exist); neighbour
+    lists **are** wired to `question_neighbour` now (a real column-for-column read path), just empty
+    until `NeighbourBuilder` (P3.T7) starts writing to it — so the snapshot's public shape won't need
+    to change when P3.T7 lands, only start returning real data.
+  - `PinnedRevisionLoader`: a `@Cacheable`-backed loader for a revision that is no longer current (an
+    attempt pinned to it before a republish) — immutable, so no expiry, only a bounded Caffeine size.
+    Its own `@Component`, not a method on the provider, for the same reason `PermissionCatalog` is its
+    own bean elsewhere in this codebase: a self-invoked `@Cacheable` method bypasses the Spring proxy
+    that applies the annotation and silently never caches anything.
+  - New bulk-read queries backing the snapshot build, each a single query with no per-row follow-up:
+    `findAllVisibleLessons`/`findAllVisibleTemplates` (status-filtered), a joined
+    `findAllActiveQuestionsWithCurrentRevision` (one row per question, its *current* revision only —
+    not every revision it's ever had), and `findAllNeighboursByQuestionId`.
+  - **A real, reproducible regression found and fixed, separate from the feature itself:** running the
+    full suite after adding these tests started failing two completely unrelated tests
+    (`BookingAvailabilityTimeOffTest`, `PerStaffBookingAvailabilityTest`) with "sorry, too many clients
+    already" from Postgres. Root cause: Spring's test-context cache keeps every *distinct* context
+    alive for reuse (each with its own connection pool), and a differently-mocked bean earns its own
+    context; enough of those accumulate over a full run to exceed Postgres's own default
+    `max_connections` (100). The failure surfaces on whichever *unrelated* test happens to need a
+    connection once the ceiling is hit — which is exactly why it looked disconnected from this task at
+    first. Confirmed reproducible across two full runs (same two classes, both passing standalone)
+    before concluding it was a connection-limit issue rather than flakiness. Fixed by raising the
+    shared test container's own `max_connections`; no production config touched.
+- **Tests:**
+  - `ContentSnapshotTest`: ordering (units/lessons/templates by sort, independent of input order),
+    indexing (by id), and that an unknown parent returns empty rather than null.
+  - `ContentSnapshotProviderTest`: the freshness gate (no store query inside the 30 s window); no
+    rebuild when the release is unchanged after the window elapses; a rebuild when it has; 20
+    concurrent threads past the window resulting in exactly one store query (single-flight) — all via
+    a controllable test `Clock`, not real sleeps.
+  - `ContentSnapshotProviderAcceptanceTest` (real Postgres): **the tracker's own P3.T6 acceptance
+    check** — two independent `ContentSnapshotProvider` instances, sharing only the real database,
+    both pick up a newly-created release within the 30 s window. Two plain instances rather than two
+    full Spring contexts, since the provider holds no static or shared in-process state for a second
+    context to prove anything about that two instances sharing a database don't already.
+  - `PinnedRevisionLoaderTest` (real Spring context, `@MockitoSpyBean`): confirms the cache actually
+    hits — a mocked store in a plain unit test would never touch the real proxy `@Cacheable` needs to
+    do anything at all, so it would pass identically whether caching worked or not.
+  - Extended `TheoryContentStoreTest` with the new bulk-read methods, specifically proving the status
+    filtering (a `HIDDEN` lesson/template is absent from the "all visible" lists) and the join (the
+    *current* revision is the one returned, not an older one still sitting in the table).
+  - Full suite: `./gradlew test` → **1456 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** none beyond the two deliberately-deferred fields, already anticipated
+  by the tracker itself.
+- **Issues found / open risks:** the test-infrastructure connection-limit issue above — fixed, but
+  worth knowing it exists as the suite keeps growing; the fix (a higher ceiling on the shared test
+  container) buys headroom rather than removing the underlying cause (accumulating distinct Spring
+  test contexts), so it could resurface again much further down the line.
+- **Ready to continue:** YES.
+- **Next task:** P3.T7 (neighbour builder) — the snapshot's neighbour-list read path is already built
+  and tested; P3.T7 only needs to populate `question_neighbour`. P3.T8 (platform endpoints) still
+  needs P3.T7 too.

@@ -389,24 +389,29 @@ every repository the plan touches:
     (and tested) by five other schedulers with no per-scheduler acceptance test of its own; this follows the
     same, already-established scope boundary rather than introducing a new one.
 
-- [ ] **P3.T6 In-memory content snapshot** · Repo: ENG · Dep: P3.T4 · Plan §9.2
-  - [ ] An immutable `ContentSnapshot` holding:
-    - units, lessons (titles, versions, `estimated_minutes`) and templates in order;
-    - current question revisions (tags, level, keys, option keys, explanations);
-    - neighbour lists;
-    - the resolved retry policy (added in P4.T1).
-  - [ ] `ContentSnapshotProvider.get()`, held in an `AtomicReference`:
-    - **lazy freshness check**: at most once per 30 s, a single-flight check of `max(release_id)`;
-    - rebuilds when it changes.
-    - Don't use a ShedLock'd job here: **every instance** must refresh.
-  - [ ] Older pinned revisions load on demand into a bounded Caffeine cache (immutable, no expiry).
+- [x] **P3.T6 In-memory content snapshot** · Repo: ENG · Dep: P3.T4 · Plan §9.2 — DONE (2026-11-02).
+  See `PROGRESS__STATUS.md`.
+  - [x] An immutable `ContentSnapshot` holding:
+    - [x] units, lessons (titles, versions, `estimated_minutes`) and templates in order;
+    - [x] current question revisions (tags, level, keys, option keys, explanations);
+    - [x] neighbour lists — the read path is real and wired to `question_neighbour` now; the table
+          itself stays empty until P3.T7's `NeighbourBuilder` writes to it;
+    - [ ] the resolved retry policy (added in P4.T1) — genuinely deferred, as the tracker's own
+          parenthetical already anticipated; `retry_policy` doesn't exist as a table yet.
+  - [x] `ContentSnapshotProvider.get()`, held in an `AtomicReference`:
+    - [x] **lazy freshness check**: at most once per 30 s, a single-flight check of `max(release_id)`;
+    - [x] rebuilds when it changes.
+    - [x] Don't use a ShedLock'd job here: **every instance** must refresh.
+  - [x] Older pinned revisions load on demand into a bounded Caffeine cache (immutable, no expiry).
   - **Unit tests:**
-    - [ ] atomic swap;
-    - [ ] single-flight under concurrent `get()`;
-    - [ ] no rebuild without a release change;
-    - [ ] the old-revision loader.
+    - [x] atomic swap;
+    - [x] single-flight under concurrent `get()`;
+    - [x] no rebuild without a release change;
+    - [x] the old-revision loader.
   - **Acceptance:** after a sync creates a release, two engine instances (two Spring contexts in a test) both serve
-    the new snapshot within 30 s.
+    the new snapshot within 30 s. — met with two plain `ContentSnapshotProvider` instances rather than two full
+    Spring contexts: the provider holds no static/shared state, so two instances sharing only the real database
+    *are* two independent "engine instances" for everything this check is actually testing; see `PROGRESS__STATUS.md`.
 
 - [ ] **P3.T7 Neighbour builder (metadata strategy)** · Repo: ENG · Dep: P3.T4 · Plan §8
   - [ ] `NeighbourBuilder` runs after each release. For every ACTIVE question, rank ACTIVE candidates from the
