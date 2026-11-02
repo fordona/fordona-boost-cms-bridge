@@ -1250,3 +1250,47 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Issues found / open risks:** none new.
 - **Ready to continue:** YES.
 - **Next task:** P4.T3 (`QuestionSetSelector`, `fixed-v1`) — depends only on P4.T2, which is now done.
+
+### 2026-11-03 · P4.T3 · QuestionSetSelector (fixed-v1)
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · c3322bcc
+- **What was done:**
+  - `QuestionSetSelector` (pure port) + `SelectionContext` (snapshot, userId, lessonId, `attemptNo`) +
+    `QuestionSetSelection` (ordered `QuestionRef`s + strategyId + selectionReason). `attemptNo` is
+    resolved by the caller from the learner's prior attempts — the port itself stays pure, no I/O, as
+    the tracker's own acceptance line requires ("no Spring context in its tests").
+  - `FixedTemplateSelector` (`fixed-v1`): one formula covers both first attempt and every retake —
+    `index = (hash(app_user_id, lesson_id) mod N + (attemptNo − 1)) mod N`, since attempt 1 adds zero.
+    Only questions present in the snapshot (i.e. `ACTIVE` with a current revision) are kept from a
+    template's membership list, in the template's own order — an excluded/invalid member is silently
+    dropped rather than surfaced, since the engine already decided it's unservable at sync time.
+  - **No murmur3 (or any stable-hash) dependency existed in this codebase.** Adding Guava — the
+    obvious off-the-shelf source for `Hashing.murmur3_32()` — just to get one hash function felt like
+    the wrong trade for a dependency with a large transitive footprint. Hand-rolled the public-domain
+    `MurmurHash3_x86_32` algorithm (Austin Appleby's reference, widely reproduced verbatim in Guava,
+    Cassandra, Elasticsearch, etc.) as a small package-private utility instead. It is not validated
+    against an external library's exact output — bit-compatibility with another implementation was
+    never the requirement, only a hash that's (a) actually stable across JVM versions, unlike
+    `Object.hashCode`/`String.hashCode`, and (b) well-distributed, which the 10k-synthetic-user test
+    below checks directly rather than trusting by inspection.
+  - `theory.selection.strategy` gates `FixedTemplateSelector` the same way `theory.similarity.source`
+    gated `MetadataSimilarQuestionProvider` (P3.T7): the only implementation that exists, so any other
+    configured value fails application startup rather than silently no-op'ing.
+- **Tests:**
+  - `Murmur3HashTest` (4 tests, pure): determinism; the empty string doesn't throw; every tail-byte
+    fall-through branch (0/1/2/3 extra bytes) is exercised; 1000 distinct inputs land in all 4 buckets
+    when reduced mod 4 (not a constant or a trivial identity function).
+  - `FixedTemplateSelectorTest` (7 tests, pure, no Spring context anywhere): stable across repeated
+    calls; only valid questions kept, in template order; the retake reason string; six retakes across
+    3 templates repeat the exact same sequence on the second lap (true rotation, not drift); a
+    template count that changes between the first attempt and a retake still returns a valid in-range
+    selection rather than throwing; zero visible templates returns an empty selection, not an
+    exception; and the tracker's own acceptance bound — 10,000 synthetic users across 4 templates land
+    within ±10% of an even split.
+  - Full suite: `./gradlew test` → **1544 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** the hand-rolled murmur3 instead of a library dependency (above) — a
+  strengthening of "use a stable hash" into "without adding a new dependency for it," not a weakening.
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P4.T4 (start, resume and read attempt) — depends only on P4.T3, which is now done.

@@ -512,20 +512,22 @@ every repository the plan touches:
   - **Acceptance:** a table-driven test covers each `status` value used by the learning path (`completed`,
     `current`, `locked`).
 
-- [ ] **P4.T3 QuestionSetSelector (`fixed-v1`)** · Repo: ENG · Dep: P4.T2 · Plan §5.2
-  - [ ] A pure port `QuestionSetSelector.select(SelectionContext)` → ordered refs `(questionId, version, templateId)`
+- [x] **P4.T3 QuestionSetSelector (`fixed-v1`)** · Repo: ENG · Dep: P4.T2 · Plan §5.2
+  - [x] A pure port `QuestionSetSelector.select(SelectionContext)` → ordered refs `(questionId, version, templateId)`
         + strategy id + reason.
-  - [ ] `FixedTemplateSelector`:
+  - [x] `FixedTemplateSelector`:
     - first attempt: `hash(app_user_id, lesson_id) mod visibleTemplates`. Use a stable hash (e.g. murmur3 over the
       ids), never `Object.hashCode`;
     - retake k: `(firstIndex + k − 1) mod visibleTemplates`;
     - only valid questions, in template order.
-  - [ ] A config switch `theory.selection.strategy=fixed-v1`.
+    - No murmur3 dependency existed in the project; hand-rolled `MurmurHash3_x86_32` rather than adding
+      one (e.g. Guava) for a single hash call — see `PROGRESS__STATUS.md`, 2026-11-03, P4.T3.
+  - [x] A config switch `theory.selection.strategy=fixed-v1`.
   - **Unit tests:**
-    - [ ] stable across JVM runs;
-    - [ ] the spread is roughly uniform across 10k synthetic users (chi-square or a ±10 % bound);
-    - [ ] rotation;
-    - [ ] the template count changing between attempts.
+    - [x] stable across JVM runs;
+    - [x] the spread is roughly uniform across 10k synthetic users (chi-square or a ±10 % bound);
+    - [x] rotation;
+    - [x] the template count changing between attempts.
   - **Acceptance:** the selector is pure; it has no Spring context in its tests.
 
 - [ ] **P4.T4 Start, resume and read attempt** · Repo: ENG · Dep: P4.T3 · Plan §5.1, §6 concurrency, §7.4
