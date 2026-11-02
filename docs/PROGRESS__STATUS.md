@@ -1721,3 +1721,58 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   owns the plan before the BFF is built against this contract.
 - **Ready to continue:** YES. P4 is fully closed.
 - **Next task:** P5.T1 (migrations: progress tables) — depends on P4, which is now done. Plan §5.7, §6.
+
+### 2026-11-03 · P5.T1 · Migrations: progress tables
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 07f151c9
+- **What was done:**
+  - `V1_0_19__theory_progress.sql` creates all four tables the tracker lists, matching Plan §6's ERD
+    field-for-field: `lesson_progress` (PK `(app_user_id, lesson_id)`, `best_accuracy NUMERIC(5,4)`,
+    nullable `open_attempt_id UUID REFERENCES lesson_attempt`, `updated_at`, plus the partial index
+    `WHERE open_attempt_id IS NOT NULL` for home's Continue card), `learner_theory_summary` (PK
+    `app_user_id`), `learner_activity_day` (PK `(app_user_id, local_date)`), and
+    `learner_activity_lesson` (PK `(app_user_id, local_date, lesson_id)`).
+  - `lesson_progress.lesson_id`/`unit_id` and `learner_activity_lesson.lesson_id` are real FKs to
+    `content_lesson`/`content_unit`, matching how `lesson_attempt` (P4.T1) already references them.
+  - CHECK constraints beyond what the plan's own table lists, added defensively in the same spirit as
+    `lesson_attempt`'s counts check (P4.T1): `best_accuracy BETWEEN 0 AND 1`, non-negative counters,
+    `last_lesson_correct`/`last_lesson_total` either both null or `correct <= total`, and
+    `longest_streak >= current_streak`.
+- **A genuine, deliberate omission — not an oversight:** the plan's ERD (the mermaid diagram) draws
+  `LEARNER_THEORY_SUMMARY ||--o{ LEARNER_ACTIVITY_DAY` and `LEARNER_ACTIVITY_DAY ||--o{
+  LEARNER_ACTIVITY_LESSON` as relationships, which would normally become FKs. Neither is implemented,
+  for two independent reasons, both load-bearing:
+  1. Plan §5.7's write-path step 3 is explicit about order: *"INSERT learner_activity_lesson … ON
+     CONFLICT DO NOTHING. If a row was inserted, upsert `learner_activity_day`"* — the lesson-activity
+     row is written **before** the day row. A FK from `learner_activity_lesson` to
+     `learner_activity_day` would make that exact, specified sequence fail with a foreign-key violation
+     on the very first write of a new day.
+  2. Step 4 only ever **updates** `learner_theory_summary` — never upserts it — which only makes sense
+     if the summary row is expected to already exist by the time any lesson completes (created some
+     other way, not specified in this task's scope — P5.T3 presumably). A FK from either activity table
+     to the summary would require the summary to exist first regardless, which the write path doesn't
+     guarantee as written.
+  Also: Plan §6's own "Constraints and indexes" table (the authoritative list, distinct from the
+  illustrative ERD diagram) lists no FK for either relationship — only the PKs and the one partial
+  index, which this migration implements exactly. Followed the explicit constraints table and the
+  explicit write-order prose over the diagram's shorthand, and logged this rather than guessing past
+  it, since it's exactly the kind of mismatch between a diagram and its own spec that's easy to "fix"
+  wrongly in either direction.
+- **Tests:** no dedicated migration test exists for any prior theory migration (V1_0_16/17/18), so this
+  follows the same precedent: verified via the existing mechanism — every `IntegrationTestBase` subclass
+  boots a real Spring context against Postgres, which runs Flyway on `engn_learning` and would fail
+  context load on any migration syntax or constraint error. `FordonaEngineApplicationTests` (context
+  load) and the full suite both passed clean: `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** the two omitted FKs above, both logged as deliberate per-field
+  decisions rather than deviations in behaviour — the resulting schema matches Plan §6's literal
+  constraints table exactly.
+- **Issues found / open risks:**
+  - Nothing writes to these four tables yet — that's P5.T3 (ProgressService write path), which depends
+    on P5.T2 (timezone handling) first. Whoever builds P5.T3 should confirm where/when
+    `learner_theory_summary` rows get created, given step 4's "update, not upsert" implies some other
+    creation path this task didn't need to resolve.
+  - Carried forward, unrelated to this task: `levelDropAllowed` (P4.T6) still unwired; the two P4.T8
+    deviations (locked → 200, partial `estimatedMinutes`) still worth a plan-owner confirmation.
+- **Ready to continue:** YES.
+- **Next task:** P5.T2 (timezone handling) — depends on P5.T1, which is now done. Plan §5.7.

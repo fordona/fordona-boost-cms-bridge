@@ -670,14 +670,16 @@ every repository the plan touches:
 
 - [ ] **P5 — phase done**
 
-- [ ] **P5.T1 Migrations: progress tables** · Repo: ENG · Dep: P4 · Plan §5.7, §6
-  - [ ] `V1_0_19__theory_progress.sql`:
+- [x] **P5.T1 Migrations: progress tables** · Repo: ENG · Dep: P4 · Plan §5.7, §6
+  - [x] `V1_0_19__theory_progress.sql`:
     - `lesson_progress` (incl. `best_accuracy`, `open_attempt_id`, `updated_at`; PK `(app_user_id, lesson_id)`;
       partial index on open attempts);
     - `learner_theory_summary`;
     - `learner_activity_day`;
     - `learner_activity_lesson`.
-  - **Acceptance:** migration test green.
+  - **Acceptance:** migration test green (via the existing Spring-context-boot Flyway check every
+    `IntegrationTestBase` test already runs — no dedicated migration test exists for prior theory
+    migrations either).
 
 - [ ] **P5.T2 Timezone handling** · Repo: ENG · Dep: P5.T1 · Plan §5.7
   - [ ] Read `X-Timezone` (validate with `ZoneId.of`; ignore invalid values); default `Europe/Stockholm`. Store it on
