@@ -1776,3 +1776,59 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
     deviations (locked → 200, partial `estimatedMinutes`) still worth a plan-owner confirmation.
 - **Ready to continue:** YES.
 - **Next task:** P5.T2 (timezone handling) — depends on P5.T1, which is now done. Plan §5.7.
+
+### 2026-11-03 · P5.T2 · Timezone handling
+
+- **Status:** DONE, with one bullet deliberately deferred (see below).
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · d0a8f77f
+- **What was done:**
+  - `TheoryTimezoneResolver.resolve(timezoneHeader)`: `ZoneId.of(...)`, catching `DateTimeException` for
+    an invalid/garbage value and falling back to `DEFAULT_ZONE` (`Europe/Stockholm`) — same fallback for
+    `null`/blank. Pure, mirroring `TheoryLocaleResolver`'s shape exactly (no request/session state, no
+    Spring annotations), so it is trivially unit-testable and reusable from wherever the header is
+    eventually read.
+  - `LocalDay.dateOf(instant, zone)` and `LocalDay.nextMidnight(instant, zone)`. Both go through
+    `java.time`'s own zone-aware conversions (`atZone(...).toLocalDate()` and
+    `localDate.plusDays(1).atStartOfDay(zone).toInstant()`) rather than any fixed-duration arithmetic,
+    which is what makes them DST-safe: a day that gains or loses an hour is handled correctly for free
+    because `atStartOfDay` resolves the real UTC offset for that specific calendar date.
+- **Scope decision — logged, not guessed past:** the tracker's first bullet also says "Store it on the
+  summary when it changes," but that has no home yet:
+  - No endpoint in this codebase reads `X-Timezone` at all — the first one will be `GET
+    /internal/theory/v1/home` (P5.T4) or possibly a request filter alongside it, neither of which
+    exists yet.
+  - No `learner_theory_summary` store or model exists — P5.T1 only migrated the table (Plan §6's ERD);
+    building a one-method store now (`updateTimezoneIfChanged`) ahead of P5.T3's actual read/write store
+    for that table risks exactly the kind of overlapping, soon-superseded plumbing CLAUDE.md's "no
+    half-finished implementations" principle warns against — P5.T3 would have to touch the same table
+    and likely the same row again immediately after.
+  - The tracker's own Unit Tests line for this task lists only the resolver/`LocalDay` scenarios
+    (invalid zone, boundaries, DST) — nothing about a summary write — which reads as confirming this
+    bullet's write-path half is meant to land wherever the header is first actually consumed, not here.
+  Decision: ship the pure resolver and `LocalDay` now (both fully testable in isolation), and wire the
+  "store on change" write into whichever of P5.T3/P5.T4 first has a real request path and a real
+  `learner_theory_summary` store to write through. Flagging this explicitly so it doesn't get silently
+  dropped — whoever picks up P5.T3/P5.T4 should treat this as still-open scope from P5.T2, not optional.
+- **Tests:**
+  - `TheoryTimezoneResolverTest` (6 tests): valid zone accepted; `null` → default; blank → default;
+    invalid zone string → default; a fixed-offset string (`+02:00`) accepted (confirms it isn't
+    IANA-only); `DEFAULT_ZONE` is exactly `Europe/Stockholm`.
+  - `LocalDayTest` (5 tests): 23:59/00:01 local boundaries land on the correct calendar day; an ordinary
+    day's next midnight is +24h; the 2026-03-29 spring-forward day's next midnight is +23h (and lands on
+    the correct wall-clock instant, not just "roughly a day later"); the 2026-10-25 fall-back day's next
+    midnight is +25h. Expected instants are built via `ZonedDateTime.of(..., STOCKHOLM).toInstant()`
+    rather than hand-computed UTC offsets, so the test doesn't share the same DST arithmetic it's trying
+    to verify.
+  - Full suite: `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** the deferred "store on summary" bullet above — logged as a scope/
+  sequencing decision, not a behavioural deviation (nothing wrong has been implemented; something is
+  simply not yet wired to anywhere).
+- **Issues found / open risks:**
+  - The deferred summary-write bullet (above) must be picked up explicitly in P5.T3 or P5.T4 — it is
+    real, specified scope from this task, not optional follow-up.
+  - Carried forward, unrelated to this task: `levelDropAllowed` (P4.T6) still unwired; the two P4.T8
+    deviations (locked → 200, partial `estimatedMinutes`) still worth a plan-owner confirmation.
+- **Ready to continue:** YES.
+- **Next task:** P5.T3 (ProgressService write path) — depends on P5.T2 (now done) and P4.T7 (done).
+  Should also fold in the deferred timezone-on-summary write from this task if the write path it builds
+  is the first real place to put it; otherwise P5.T4 picks it up.

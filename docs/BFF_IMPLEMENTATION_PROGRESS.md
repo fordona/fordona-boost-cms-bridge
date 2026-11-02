@@ -681,10 +681,12 @@ every repository the plan touches:
     `IntegrationTestBase` test already runs — no dedicated migration test exists for prior theory
     migrations either).
 
-- [ ] **P5.T2 Timezone handling** · Repo: ENG · Dep: P5.T1 · Plan §5.7
-  - [ ] Read `X-Timezone` (validate with `ZoneId.of`; ignore invalid values); default `Europe/Stockholm`. Store it on
-        the summary when it changes.
-  - [ ] A `LocalDay` helper: the local date for an `Instant` + zone; the next local midnight as an `Instant` (DST
+- [x] **P5.T2 Timezone handling** · Repo: ENG · Dep: P5.T1 · Plan §5.7
+  - [x] Read `X-Timezone` (validate with `ZoneId.of`; ignore invalid values); default `Europe/Stockholm`.
+  - [ ] Store it on the summary when it changes — **deferred, logged in the status log**: no endpoint
+        reads `X-Timezone` yet and no `learner_theory_summary` store/model exists (P5.T1 only migrated
+        the table). Wiring this write happens once a real call site exists (P5.T3/P5.T4).
+  - [x] A `LocalDay` helper: the local date for an `Instant` + zone; the next local midnight as an `Instant` (DST
         safe).
   - **Unit tests:** invalid zone ignored; 23:59 / 00:01 boundaries; DST transition days (Europe/Stockholm, both
     March and October).
