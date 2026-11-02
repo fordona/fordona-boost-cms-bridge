@@ -490,21 +490,25 @@ every repository the plan touches:
     release-bump-on-PUT + `ContentSnapshotProvider`'s already-tested 30s polling, not a literal
     two-instance test.
 
-- [ ] **P4.T2 Entitlement and unlock rules** · Repo: ENG · Dep: P4.T1 · Plan §1 decision 10, §5.1
-  - [ ] Locate today's unit-lock logic (`LearnHubService` / `LearnAccessContext`, free vs subscribed). Expose it as
+- [x] **P4.T2 Entitlement and unlock rules** · Repo: ENG · Dep: P4.T1 · Plan §1 decision 10, §5.1
+  - [x] Locate today's unit-lock logic (`LearnHubService` / `LearnAccessContext`, free vs subscribed). Expose it as
         `TheoryEntitlement.isUnitEntitled(userId, unitId)`, cached per user, invalidated on subscription change.
         **Verify how existing rules identify a unit** (Directus ids vs sort). Map to Boost module ids by **sort
         order**, and record the mapping decision in `PROGRESS__STATUS.md`.
-  - [ ] `UnlockService` (pure, over the snapshot + the learner's completed set):
+        Finding: the existing module lock is a *navigation-order* rule (free learners can't skip ahead, but are
+        never permanently blocked), not a paywall — there is no existing per-unit entitlement to reuse or map.
+        The entitled boundary used here (first Boost unit by sort, free; everything else needs a subscription) is
+        confirmed against Plan §14's own test-account list, not derived from the old logic.
+  - [x] `UnlockService` (pure, over the snapshot + the learner's completed set):
     - lesson n+1 unlocks after lesson n is completed;
     - the first lesson of unit u+1 unlocks after the last visible lesson of unit u **and** if unit u+1 is
       entitled;
     - HIDDEN lessons are skipped.
   - **Unit tests:**
-    - [ ] first lesson unlocked;
-    - [ ] the skip over a hidden lesson;
-    - [ ] cross-unit with and without entitlement;
-    - [ ] retakes of completed lessons are allowed.
+    - [x] first lesson unlocked;
+    - [x] the skip over a hidden lesson;
+    - [x] cross-unit with and without entitlement;
+    - [x] retakes of completed lessons are allowed.
   - **Acceptance:** a table-driven test covers each `status` value used by the learning path (`completed`,
     `current`, `locked`).
 

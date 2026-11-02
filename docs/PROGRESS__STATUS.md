@@ -1186,3 +1186,67 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   forgotten.
 - **Ready to continue:** YES.
 - **Next task:** P4.T2 (entitlement and unlock rules) — depends only on P4.T1, which is now done.
+
+### 2026-11-03 · P4.T2 · Entitlement and unlock rules
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 7ff5b92f
+- **What was done:**
+  - **The tracker's own first instruction — "locate today's unit-lock logic" — turned up a real
+    finding, not just a mapping exercise.** `LearnHubService#buildModuleProgress` (the Directus-backed
+    theory hub) computes `isLocked = accessLevel == FREE && !previousCompleted`: a free learner can
+    reach *every* module eventually, one at a time, in order — subscription only grants the right to
+    jump ahead. There is no per-module paywall anywhere in that code (`ModuleContentModel` has no
+    `requiresSubscription` field at all — only `ExamTypeModel` does, for mock exam types, a different
+    product surface). So "map to Boost module ids by sort order" could not mean translating an
+    existing Directus-id-keyed entitlement list into Boost ids — **there is no existing entitlement
+    boundary to map**, Directus and Boost are two separate content systems with no shared identities,
+    and reusing the hub's logic verbatim would have made every unit eventually reachable for free,
+    which contradicts Plan decision 10's "otherwise the app shows Upgrade to Continue" (a learner who
+    is *never* unblocked). Resolved by reading forward in the plan instead of guessing: §14's own
+    test-account list says "one free learner (**Unit 1 only**), one entitled learner" — confirming the
+    actual rule is "the first Boost unit by `content_unit.sort` is free; every other unit needs an
+    active subscription," which is new design territory this task fills in, not a migration of
+    existing logic. Logged here rather than silently assumed because it's a monetization-affecting
+    decision a future reader would reasonably expect to be sourced from somewhere, and it isn't.
+  - `TheoryEntitlement.isUnitEntitled(userId, unitId)`: subscribed → entitled to everything; free →
+    entitled only to `snapshot.units().get(0)` (already sorted ascending by `sort` in `ContentSnapshot.build`).
+  - **A second finding, caught before writing the caching code, not after:** `hasActiveSubscription`'s
+    truth changes on its own as `expires_at` passes — there is no write event at that moment, only at
+    purchase/renewal (`confirmSubscription`). An eviction-only cache (which is what "invalidated on
+    subscription change" literally asks for) would keep granting paywalled access for as long as the
+    cache entry lived, silently, past a lapsed subscription's expiry. Fixed by bounding
+    `theorySubscriptionStatus` with a 5-minute TTL in `CacheConfig` **in addition to** an explicit
+    `@CacheEvict` on `LearnSubscriptionService#confirmSubscription`, so an upgrade takes effect
+    immediately while a lapse is caught within a bounded, acceptable delay rather than never.
+  - Split the cached call into its own bean, `TheorySubscriptionCache` — `@Cacheable` is a Spring AOP
+    proxy concern, and `TheoryEntitlement` calling a cached method on `this` would silently bypass it
+    (same trap `PinnedRevisionLoader`, P3.T6, was split out to avoid).
+  - `UnlockService.resolve(ContentSnapshot, Set<String> completedLessonIds, Predicate<String> unitEntitled)`:
+    one pass over every unit's visible lessons in order. The first lesson not yet completed decides
+    everything — `CURRENT` if its unit is entitled, `LOCKED` if not, and every lesson after it is
+    `LOCKED` regardless of its own entitlement (it can't have been reached without the one before it
+    completing first). A `HIDDEN` lesson needs no special case at all: it's simply never in
+    `ContentSnapshot.lessonsOf(...)`, so the walk never sees the gap in `sort` numbers.
+  - `ContentSnapshot` gained no new field for this — `UnlockService` reads `units()`/`lessonsOf(...)`,
+    already there from P3.T6.
+- **Tests:**
+  - `UnlockServiceTest` (pure, 7 tests): first lesson unlocked with nothing completed; a hidden
+    lesson's absence doesn't block the one after it; cross-unit with and without entitlement
+    (including the "no CURRENT at all" case when blocked); retaking a completed lesson changes
+    nothing; every lesson completed leaves nothing CURRENT or LOCKED; and the tracker's own
+    table-driven acceptance line (completed/current/locked all exercised in one snapshot).
+  - `TheoryEntitlementTest` (3 tests, Mockito, no Spring): subscribed → entitled everywhere; free →
+    entitled only to the first unit by sort; no units synced yet → free learner entitled to nothing.
+  - `TheorySubscriptionCacheTest` (5 tests, real Postgres + `@MockitoSpyBean`, same convention as
+    `PinnedRevisionLoaderTest`): two calls for the same user hit the use case once; different users
+    cache separately; the cache bean exists; and — the one that actually proves the second finding
+    above — seeding a `PENDING` subscription, priming the cache to `false`, then calling
+    `confirmSubscription` and confirming `isSubscribed` flips to `true` on the very next call rather
+    than waiting out the TTL.
+  - Full suite: `./gradlew test` → **1533 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** none — the entitled-unit boundary and the TTL-plus-eviction caching
+  are both filling genuine gaps in the tracker's own wording, not deviating from a stated rule.
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P4.T3 (`QuestionSetSelector`, `fixed-v1`) — depends only on P4.T2, which is now done.
