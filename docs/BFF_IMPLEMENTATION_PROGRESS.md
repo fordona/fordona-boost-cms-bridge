@@ -460,7 +460,7 @@ every repository the plan touches:
 
 ## P4. Engine: attempts, grading and the forced retry phase
 
-- [ ] **P4 — phase done**
+- [x] **P4 — phase done**
 
 - [x] **P4.T1 Migrations and retry policy** · Repo: ENG · Dep: P3 · Plan §5.6, §6
   - [x] `V1_0_17__theory_attempts.sql`:
@@ -661,7 +661,7 @@ every repository the plan touches:
     - [x] the preview count matches the next start's count.
   - **Acceptance:** zero writes during the call (query-count assertion).
 
-- [ ] **P4 Phase exit:** the full attempt flow passes in Testcontainers; no answer key appears in any pre-answer
+- [x] **P4 Phase exit:** the full attempt flow passes in Testcontainers; no answer key appears in any pre-answer
   response; all concurrency tests pass.
 
 ---

@@ -1679,3 +1679,45 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   checkbox before P5. All of its component pieces have passed in this session's tests across P4.T1–T8;
   worth a deliberate end-to-end pass over the tracker's P4 Phase exit checklist before calling P4 fully
   closed and starting P5.T1 (migrations: progress tables).
+
+### 2026-11-03 · P4 Phase exit · Confirmation pass
+
+- **Status:** DONE — ties off P4 ("phase done" + "P4 Phase exit" both ticked). No code changed.
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 7645531a (no new commit — this is
+  a verification pass over work already committed through P4.T8).
+- **What was checked, against the three Phase-exit criteria:**
+  1. **"The full attempt flow passes in Testcontainers."** `AttemptServiceTest` is an
+     `IntegrationTestBase` subclass (real Postgres via Testcontainers, not mocked), and
+     `fullFlow_acceptance_eightQuestionsTwoWrong_retryPhaseOfFive_thenCompleted` (P4.T7) runs the
+     tracker's own exact scenario end to end: start → 8 answers with 2 wrong → lesson-phase complete
+     returns 5 retry items → 5 answers → retry-phase complete → `COMPLETED`. Passing.
+  2. **"No answer key appears in any pre-answer response."** Checked at two levels, not just by test
+     assertion:
+     - **Structural guarantee:** `AttemptItemRefDTO` (the shape every pre-answer response — `start`,
+       `get`, and a lesson-completion's `retry.items` — serializes through) has no
+       `correctOptionKey`/`correctOption` field at all. It is not possible for this DTO to leak the
+       answer key regardless of what the service passes it, which is a stronger guarantee than a
+       string-absence test alone.
+     - **Explicit regression test:** `startAttempt_validJwtAndInternalToken_returns200_andNeverLeaksCorrectOptionKey`
+       additionally asserts the raw JSON body contains neither `correctOptionKey` nor
+       `correct_option_key` in any casing, covering the controller/Jackson serialization layer the DTO
+       shape alone doesn't (e.g. a stray field added elsewhere in the response envelope).
+     - The one place the key legitimately appears — `AnswerFeedbackDTO`, returned only from the
+       `answer()` endpoint *after* an item is answered — has its own test
+       (`answer_validRequest_returns200_andNeverLeaksCorrectOptionKeyFieldName`) confirming the
+       snake_case field name never appears even there, while the camelCase key itself is correctly
+       present (it's post-answer feedback, not a pre-answer leak).
+  3. **"All concurrency tests pass."** Two tests exercise real concurrent DB access (not mocked
+     timing): `start_concurrentDoubleStart_createsExactlyOneAttempt` (P4.T4 — two threads racing
+     `start()`, the unique-index/REQUIRES_NEW recovery path from Plan §6) and
+     `concurrentDevicesCompletingTheSameLessonPhase_areSerialisedNotDoubled` (P4.T7 — two threads
+     racing `completeLessonPhase()`, the `FOR UPDATE` serialization). Both pass.
+  - Full suite re-run clean immediately before this entry: `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** none — this is a verification pass, not new implementation. The two
+  deviations logged under P4.T8 (locked → 200 not 403; `estimatedMinutes`'s partial fallback) stand as
+  already recorded there and are not re-litigated here.
+- **Issues found / open risks:** none new. Carried forward unresolved: `levelDropAllowed` (P4.T6)
+  remains unwired, and the two P4.T8 deviations are still worth a one-line confirmation from whoever
+  owns the plan before the BFF is built against this contract.
+- **Ready to continue:** YES. P4 is fully closed.
+- **Next task:** P5.T1 (migrations: progress tables) — depends on P4, which is now done. Plan §5.7, §6.
