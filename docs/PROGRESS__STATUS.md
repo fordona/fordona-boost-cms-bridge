@@ -1504,24 +1504,102 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
     attempt" across *all* composed items — which is wrong for repeat items by design (a repeat item's
     whole point is reusing the wrong lesson item's own question id). Fixed by scoping that assertion to
     similar items only, where it's actually a real property.
-  - Full suite: **not run to completion this session** — the environment's own `PATH` has a corrupted
-    entry (`C:\Program ` — truncated), which crashes `ServiceConnectionContextCustomizerFactory`'s
-    reflection during Spring context bootstrap for every `IntegrationTestBase` subclass, non-
-    deterministically, unrelated to any change in this repo (confirmed: two consecutive full-suite
-    runs failed identically across ~35 completely unrelated test classes spanning payments, school,
-    users and jobs; the same host's full suite had passed cleanly earlier this session before this
-    appeared). User's call: fix the `PATH` on their own machine later rather than block this task on
-    it. **This commit is verified only by `RetryComposerTest` run in isolation (20/20 passed)** — the
-    full-suite regression check for P4.T6 is outstanding and should be the first thing re-run once the
-    `PATH` is fixed, before trusting any later task's "full suite green" claim at face value.
+  - Full suite: **not run to completion this session** — every `IntegrationTestBase` subclass failed
+    with an `InvalidPathException: Trailing char < > at index 10: C:\Program` thrown during
+    `ServiceConnectionContextCustomizerFactory`'s reflection at Spring context bootstrap. At the time
+    this was (wrongly) diagnosed as a corrupted `PATH` entry on the host. **Correction (confirmed in
+    the P4.T7 session):** the real cause was Docker Desktop's daemon not running at all — `docker info`
+    showed the CLI client responding but the server/named-pipe connection failing
+    (`open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified`), and
+    `tasklist` showed zero Docker processes. The `PATH`-shaped exception is Testcontainers' own
+    error-surfacing artifact when it can't reach Docker at all, not evidence of a corrupted `PATH`.
+    No `PATH` entry was ever fixed; restarting Docker Desktop alone resolved it. **This commit was
+    verified only by `RetryComposerTest` run in isolation (20/20 passed)** at the time — the full-suite
+    regression check for P4.T6 was deferred to P4.T7, where it has since passed (see that entry).
 - **Deviations from the plan:** none in the composer's own behaviour — the determinism and filter-b
   points above are documented interpretations of genuinely underspecified wording, not deviations from
   anything the plan states explicitly.
 - **Issues found / open risks:**
   - `levelDropAllowed` remains completely unwired (see above) — worth raising with whoever owns the
     plan's retry-policy design before P4.T7 ships, since right now it's a config field with no effect.
-  - **Outstanding:** the full regression suite has not been re-run since before this task, due to the
-    host `PATH` corruption above. The next session (or the next task in this one) should run
-    `./gradlew test` to completion before trusting the suite is still green.
-- **Ready to continue:** YES, with the full-suite caveat above.
+    **Still open after P4.T7** — not addressed there either (P4.T7 only wires `RetryComposer` as-is).
+  - ~~**Outstanding:** the full regression suite has not been re-run since before this task~~ —
+    resolved in P4.T7: Docker Desktop was the actual blocker (see correction above), and the full
+    suite is green as of that task.
+- **Ready to continue:** YES.
 - **Next task:** P4.T7 (phase completion) — depends on P4.T6, which is now done.
+
+### 2026-11-03 · P4.T7 · Phase completion
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · cb0a5611
+- **What was done:**
+  - `AttemptService.completeLessonPhase(userId, attemptId)`: `SELECT ... FOR UPDATE` on
+    `lesson_attempt`, 409 `PHASE_INCOMPLETE` if any lesson-phase item is unanswered, writes the lesson
+    totals. W = 0 → status `COMPLETED` directly. W > 0 → calls `RetryComposer.compose(...)` (P4.T6)
+    with the lesson's own wrong items as seeds, inserts the composed items as `phase=RETRY` at the next
+    `seq`, writes `retry_extras_short`, and moves the attempt to `IN_RETRY`. Calling it again once the
+    attempt has left `IN_LESSON` returns the already-stored summary unchanged (natural idempotency, no
+    marker column) rather than re-running the transition.
+  - `AttemptService.completeRetryPhase(userId, attemptId)`: requires status `IN_RETRY` (else 409
+    `PHASE_CLOSED`); 409 `PHASE_INCOMPLETE` if any retry item is unanswered; writes retry totals and
+    moves the attempt to `COMPLETED`. Calling it again when already `COMPLETED` returns the stored
+    summary (same idempotency pattern).
+  - `RetryPolicy` is read back off `lesson_attempt.policy_snapshot` (written at `start()` in P4.T4) via
+    `ObjectMapper`, not re-resolved from the live `RetryPolicyResolver` — the policy that applies to a
+    retry phase is whatever was pinned when the attempt started, same pinning principle P4.T5 already
+    established for question content.
+  - `seenQuestionIds` for the composer's unseen-first pass comes from a new repository query
+    (`findSeenQuestionIds`, all `attempt_item` rows the user has ever answered) — a genuine cross-attempt
+    read, not scoped to the current attempt, since "seen" means seen by the learner at all.
+  - New DTOs: `PhaseSummaryDTO(total, correct, wrong)`, `RetryPhaseDTO(total, items)`,
+    `AttemptPhaseCompletionDTO(attemptId, status, lessonSummary, retrySummary, retry, next, progress)`.
+    `next`/`progress` are always `null` — the contract shape P5 will fill in — and are correctly omitted
+    from the JSON response by the existing global `spring.jackson.default-property-inclusion: non_null`,
+    not by any new per-DTO annotation.
+  - Two new endpoints on `TheoryAttemptInternalController`:
+    `POST /internal/theory/v1/attempts/{attemptId}/phases/lesson/complete` and
+    `.../phases/retry/complete`, both deriving the caller from the JWT as every other endpoint in this
+    controller does.
+- **Tests:**
+  - `AttemptServiceTest` (+11 new tests, 27/27 total): W = 0 straight to `COMPLETED`; W > 0 to
+    `IN_RETRY` with retry items served; 409 on unanswered lesson items; double-complete idempotency;
+    a late answer attempted after the lesson phase has moved on → `PHASE_CLOSED`; retry-complete called
+    before the attempt ever reached `IN_RETRY` → `PHASE_CLOSED`; 409 on unanswered retry items;
+    double-complete idempotency for the retry phase; a 2-thread Testcontainers test asserting
+    `FOR UPDATE` serializes two devices completing the same lesson phase at once into exactly one
+    retry-item insert, not two; and the tracker's own full-flow acceptance test (start → 8 answers with
+    2 wrong → lesson complete returns 5 retry items → 5 answers → retry complete → `COMPLETED`).
+  - `TheoryAttemptInternalControllerTest` (+5 new tests, 13/13 total): missing internal token → 403;
+    W > 0 → 200 with retry items and `next`/`progress` both absent from the JSON (`doesNotExist()`);
+    unanswered items → 409; retry completion → 200 `COMPLETED`.
+  - Two real test bugs found and fixed while writing the acceptance test, neither requiring any change
+    to production code:
+    - Seeding order: a test template's questions (`content_question`, FK'd to `home_lesson_id`) were
+      seeded before the `content_lesson` row they reference existed — fixed by seeding the lesson first.
+    - **Worth flagging explicitly, not just as a test fix:** `UnlockService.resolve()` walks every
+      unit's lessons in **one global sort order**, not per-unit independently (Plan §1 decision 10) —
+      a lesson in a later unit stays `LOCKED` regardless of that unit's own entitlement stub until every
+      earlier lesson in the global walk is completed. The acceptance test's first draft gave its new
+      8-question lesson's unit its own `isUnitEntitled` stub and expected that alone to unlock it; it
+      instead stayed `LOCKED` because the shared fixture's own earlier lesson (unit sort 1) had never
+      been completed. This is correct product behaviour, not a bug — fixed by having the test complete
+      that earlier lesson for real (start → answer all correctly → `completeLessonPhase`) before
+      starting the lesson under test, exactly as a real learner's sequential progression would require.
+      Documented here because it is a non-obvious trap for any future test that seeds a second
+      unit/lesson pair and assumes per-unit entitlement is sufficient to unlock it.
+    - A secondary slip in the same test (a similar-item candidate question seeded against the wrong,
+      older `unitId` instead of the new lesson's `unit8Id`) was also caught and fixed; it happened not to
+      fail any assertion since both units were stubbed entitled by that point, but was corrected for
+      consistency.
+  - Full suite: **`./gradlew test --no-daemon -q` run to completion, exit code 0** — no cross-cutting
+    regressions. Docker Desktop was confirmed running first (`docker info` → `Containers: 3`), closing
+    out the P4.T6 entry's outstanding full-suite caveat (see the correction added to that entry above).
+- **Deviations from the plan:** none observed.
+- **Issues found / open risks:**
+  - `levelDropAllowed` (flagged in P4.T6) remains unwired — `RetryComposer` is used here exactly as
+    P4.T6 built it, so this task doesn't touch that gap either way. Still worth raising before the
+    retry-policy UI ships.
+  - None new from this task.
+- **Ready to continue:** YES.
+- **Next task:** P4.T8 (lesson state endpoint) — depends on P4.T7, which is now done.

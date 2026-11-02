@@ -625,24 +625,24 @@ every repository the plan touches:
   - **Acceptance:** a property test confirms the composer never returns duplicates or questions already in the
     attempt.
 
-- [ ] **P4.T7 Phase completion** · Repo: ENG · Dep: P4.T6 · Plan §5.1, §7.3
-  - [ ] `POST /internal/theory/v1/attempts/{id}/phases/lesson/complete`:
+- [x] **P4.T7 Phase completion** · Repo: ENG · Dep: P4.T6 · Plan §5.1, §7.3
+  - [x] `POST /internal/theory/v1/attempts/{id}/phases/lesson/complete`:
     - `FOR UPDATE`;
     - all lesson items answered, else 409 `PHASE_INCOMPLETE`;
     - write the totals;
     - W > 0 → compose and insert retry items, status `IN_RETRY`;
     - W = 0 → `COMPLETED` (lesson completion side effects run in P5).
-  - [ ] `POST …/phases/retry/complete`: all retry items answered; totals; `COMPLETED`.
-  - [ ] Natural idempotency: completing an already-completed phase returns the stored summary.
-  - [ ] Response refs for the retry items.
-  - [ ] Leave the `next` + `progress` fields for P5 (null until then, contract shape fixed).
+  - [x] `POST …/phases/retry/complete`: all retry items answered; totals; `COMPLETED`.
+  - [x] Natural idempotency: completing an already-completed phase returns the stored summary.
+  - [x] Response refs for the retry items.
+  - [x] Leave the `next` + `progress` fields for P5 (null until then, contract shape fixed).
   - **Tests:**
-    - [ ] W = 0 path;
-    - [ ] W > 0 path;
-    - [ ] incomplete → 409;
-    - [ ] double complete returns the same summary;
-    - [ ] a late answer after completion → 409;
-    - [ ] two devices completing at once are serialised (Testcontainers).
+    - [x] W = 0 path;
+    - [x] W > 0 path;
+    - [x] incomplete → 409;
+    - [x] double complete returns the same summary;
+    - [x] a late answer after completion → 409;
+    - [x] two devices completing at once are serialised (Testcontainers).
   - **Acceptance:** a full flow test: start → 8 answers with 2 wrong → lesson complete returns 5 retry items → 5
     answers → retry complete → `COMPLETED`.
 
