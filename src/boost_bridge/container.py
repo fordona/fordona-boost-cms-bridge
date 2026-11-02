@@ -14,7 +14,6 @@ from boost_bridge.db.session import create_engine, create_sessionmaker, ping
 from boost_bridge.db.snapshot_repository import SnapshotRepository
 from boost_bridge.services.content_cache import ContentCache
 from boost_bridge.services.content_service import ContentService
-from boost_bridge.services.sequencing import CmsOrderSequencer
 
 ReadinessCheck = Callable[[], Awaitable[None]]
 
@@ -63,10 +62,7 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
 
     try:
         yield Services(
-            # Recommendation engine slot: swap CmsOrderSequencer here (services/sequencing.py).
-            content=ContentService(
-                cache, CmsOrderSequencer(), asset_base_url=settings.asset_base_url
-            ),
+            content=ContentService(cache, asset_base_url=settings.asset_base_url),
             verifier=verifier,
             readiness_checks={"database": check_database, "redis": redis_cache.ping},
         )

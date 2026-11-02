@@ -27,7 +27,6 @@ from boost_bridge.core.security import JwksCache, TokenVerifier
 from boost_bridge.main import create_app
 from boost_bridge.services.content_cache import ContentCache
 from boost_bridge.services.content_service import ContentService
-from boost_bridge.services.sequencing import CmsOrderSequencer, ContentSequencer
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
 from tests.fakes import FakeClock, InMemorySnapshots
 
@@ -73,14 +72,7 @@ def make_settings(**overrides: object) -> Settings:
 
 
 @pytest.fixture
-def sequencer() -> ContentSequencer:
-    return CmsOrderSequencer()
-
-
-@pytest.fixture
-def harness_factory(
-    sequencer: ContentSequencer,
-) -> Callable[..., AbstractAsyncContextManager[Harness]]:
+def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
     @asynccontextmanager
     async def factory(**setting_overrides: object) -> AsyncIterator[Harness]:
         settings = make_settings(**setting_overrides)
@@ -119,7 +111,7 @@ def harness_factory(
                         return run
 
                     yield Services(
-                        content=ContentService(cache, sequencer, asset_base_url=s.asset_base_url),
+                        content=ContentService(cache, asset_base_url=s.asset_base_url),
                         verifier=TokenVerifier(
                             JwksCache(jwks_http, s.kinde_jwks_uri),
                             issuer=s.kinde_issuer_uri,

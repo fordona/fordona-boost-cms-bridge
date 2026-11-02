@@ -24,12 +24,11 @@ from boost_bridge.core.middleware import RequestContextMiddleware
 log = get_logger(__name__)
 
 _DESCRIPTION = """
-Published Theory content (modules, lessons a.k.a. chapters, and questions) from the
-Boost CMS, for the Fordona Theory App.
+Published Theory content (lessons a.k.a. chapters) from the Boost CMS, for the
+Fordona Theory App. Questions reach the app only inside a lesson attempt.
 
 * Every `/v1` route requires a Kinde bearer token.
 * Locale is chosen by `?locale=` or `Accept-Language` (`sv-SE` default, `en-GB`).
-* Questions are **answer-free**.
 * Errors are RFC 7807 `application/problem+json`, carrying `errorCode` and `correlationId`.
 * `X-Content-Stale: true` marks content served from the last-known-good copy
   while Boost is unavailable.

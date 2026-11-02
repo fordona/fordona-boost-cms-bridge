@@ -2,7 +2,7 @@
 
 tests/unit/test_security.py already proves the TokenVerifier in isolation in
 much more depth. This file is the "show the supervisor" version: every test
-hits GET /v1/modules/1 exactly like a real frontend request would, and shows
+hits GET /v1/lessons/10 exactly like a real frontend request would, and shows
 that the service correctly lets good tokens through and rejects every kind of
 bad one at the door (401), before Boost is ever called.
 
@@ -18,7 +18,7 @@ import pytest
 
 from tests.auth import AUDIENCE, ISSUER, SigningKey
 from tests.conftest import BOOST, Harness
-from tests.factories import module_payload
+from tests.factories import lesson_payload
 
 GOOD_KEY = SigningKey("test-key")  # matches the key served by the harness's JWKS mock
 
@@ -31,19 +31,19 @@ def _protected_route_was_never_called(harness: Harness) -> bool:
 
 
 async def test_valid_kinde_token_is_accepted(harness: Harness) -> None:
-    harness.boost.get(f"{BOOST}/v1/delivery/modules/1").respond(json=module_payload("1"))
+    harness.boost.get(f"{BOOST}/v1/delivery/lessons/10").respond(json=lesson_payload("10"))
 
-    response = await harness.client.get("/v1/modules/1", headers=harness.auth())
+    response = await harness.client.get("/v1/lessons/10", headers=harness.auth())
 
     assert response.status_code == 200
-    assert response.json()["id"] == "1"
+    assert response.json()["id"] == "10"
 
 
 # --- no token at all -------------------------------------------------------------
 
 
 async def test_no_token_is_rejected_with_401(harness: Harness) -> None:
-    response = await harness.client.get("/v1/modules/1")
+    response = await harness.client.get("/v1/lessons/10")
 
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
@@ -53,7 +53,7 @@ async def test_no_token_is_rejected_with_401(harness: Harness) -> None:
 
 async def test_malformed_authorization_header_is_rejected(harness: Harness) -> None:
     response = await harness.client.get(
-        "/v1/modules/1", headers={"Authorization": "Basic dXNlcjpwYXNz"}
+        "/v1/lessons/10", headers={"Authorization": "Basic dXNlcjpwYXNz"}
     )
 
     assert response.status_code == 401
@@ -62,7 +62,7 @@ async def test_malformed_authorization_header_is_rejected(harness: Harness) -> N
 
 async def test_garbage_token_is_rejected(harness: Harness) -> None:
     response = await harness.client.get(
-        "/v1/modules/1", headers={"Authorization": "Bearer not-a-real-jwt"}
+        "/v1/lessons/10", headers={"Authorization": "Bearer not-a-real-jwt"}
     )
 
     assert response.status_code == 401
@@ -74,7 +74,7 @@ async def test_garbage_token_is_rejected(harness: Harness) -> None:
 
 async def test_expired_token_is_rejected(harness: Harness) -> None:
     response = await harness.client.get(
-        "/v1/modules/1", headers=harness.auth(exp=int(time.time()) - 120)
+        "/v1/lessons/10", headers=harness.auth(exp=int(time.time()) - 120)
     )
 
     assert response.status_code == 401
@@ -87,7 +87,7 @@ async def test_expired_token_is_rejected(harness: Harness) -> None:
 async def test_token_for_a_different_audience_is_rejected(harness: Harness) -> None:
     """A token issued for a different app must not work here."""
     response = await harness.client.get(
-        "/v1/modules/1", headers=harness.auth(aud=["some-other-app"])
+        "/v1/lessons/10", headers=harness.auth(aud=["some-other-app"])
     )
 
     assert response.status_code == 401
@@ -98,7 +98,7 @@ async def test_token_from_a_different_issuer_is_rejected(harness: Harness) -> No
     """A token not actually issued by our Kinde tenant must not work, even if
     it otherwise looks valid."""
     response = await harness.client.get(
-        "/v1/modules/1", headers=harness.auth(iss="https://not-fordona.kinde.com")
+        "/v1/lessons/10", headers=harness.auth(iss="https://not-fordona.kinde.com")
     )
 
     assert response.status_code == 401
@@ -114,7 +114,7 @@ async def test_token_signed_by_an_impostor_key_is_rejected(harness: Harness) -> 
     impostor = SigningKey("test-key")  # same kid as the real key, different key pair
 
     response = await harness.client.get(
-        "/v1/modules/1", headers={"Authorization": f"Bearer {impostor.token()}"}
+        "/v1/lessons/10", headers={"Authorization": f"Bearer {impostor.token()}"}
     )
 
     assert response.status_code == 401
@@ -143,7 +143,7 @@ async def test_hs256_algorithm_confusion_attack_is_rejected(harness: Harness) ->
     )
 
     response = await harness.client.get(
-        "/v1/modules/1", headers={"Authorization": f"Bearer {forged}"}
+        "/v1/lessons/10", headers={"Authorization": f"Bearer {forged}"}
     )
 
     assert response.status_code == 401
@@ -160,7 +160,7 @@ async def test_unsigned_alg_none_token_is_rejected(harness: Harness) -> None:
     forged = f"{header}.{payload}."
 
     response = await harness.client.get(
-        "/v1/modules/1", headers={"Authorization": f"Bearer {forged}"}
+        "/v1/lessons/10", headers={"Authorization": f"Bearer {forged}"}
     )
 
     assert response.status_code == 401
@@ -177,9 +177,9 @@ async def test_an_unverified_token_is_never_forwarded_to_boost(
     learner's own token to call Boost), a token that fails our own
     verification must never reach Boost at all."""
     async with harness_factory(boost_auth_mode="forward_learner_token") as h:  # type: ignore[operator]
-        route = h.boost.get(f"{BOOST}/v1/delivery/modules/1").respond(json=module_payload("1"))
+        route = h.boost.get(f"{BOOST}/v1/delivery/lessons/10").respond(json=lesson_payload("10"))
 
-        response = await h.client.get("/v1/modules/1", headers=h.auth(aud=["someone-else"]))
+        response = await h.client.get("/v1/lessons/10", headers=h.auth(aud=["someone-else"]))
 
         assert response.status_code == 401
         assert route.call_count == 0  # Boost was never even asked
@@ -192,7 +192,7 @@ async def test_401_response_never_echoes_the_bad_token(harness: Harness) -> None
     secret_looking_token = "Bearer eyFAKESECRETVALUESHOULDNEVERBEECHOED.back.toclient"
 
     response = await harness.client.get(
-        "/v1/modules/1", headers={"Authorization": secret_looking_token}
+        "/v1/lessons/10", headers={"Authorization": secret_looking_token}
     )
 
     assert response.status_code == 401
@@ -205,7 +205,7 @@ async def test_a_variety_of_garbage_inputs_all_fail_closed(harness: Harness, tok
     an authenticated code path — every shape of garbage must fail closed
     (401), never 500."""
     response = await harness.client.get(
-        "/v1/modules/1", headers={"Authorization": f"Bearer {token}"}
+        "/v1/lessons/10", headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 401

@@ -6,7 +6,6 @@ from boost_bridge.api.deps import Content, CurrentLearner, Locale, PageNumber, P
 from boost_bridge.api.responses import CONTENT_ERRORS, LIST_ERRORS
 from boost_bridge.schemas.common import ID_PATTERN, Page
 from boost_bridge.schemas.lessons import Lesson, LessonSummary
-from boost_bridge.schemas.questions import LessonQuestions
 
 router = APIRouter(prefix="/lessons", tags=["lessons"])
 
@@ -45,22 +44,3 @@ async def get_lesson(
     response: Response, content: Content, _: CurrentLearner, locale: Locale, lesson_id: LessonId
 ) -> Lesson:
     return serve(response, await content.get_lesson(lesson_id, locale), locale)
-
-
-@router.get(
-    "/{lessonId}/questions",
-    response_model=LessonQuestions,
-    responses=LIST_ERRORS,
-    summary="All published questions of a lesson, in learning order",
-    description="Returns the lesson's complete question set (not paginated), ordered by "
-    "the active sequencer. Phase 1 keeps the CMS order; the AI recommendation engine "
-    "will plug in here without changing this contract. Questions never include answers.",
-)
-async def get_lesson_questions(
-    response: Response,
-    content: Content,
-    learner: CurrentLearner,
-    locale: Locale,
-    lesson_id: LessonId,
-) -> LessonQuestions:
-    return serve(response, await content.lesson_questions(learner, lesson_id, locale), locale)

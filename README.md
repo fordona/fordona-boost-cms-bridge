@@ -42,19 +42,20 @@ uv run uvicorn boost_bridge.main:app --reload
 ### Example
 
 ```bash
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/modules?locale=en-GB"
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/lessons/10/questions"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/lessons?locale=en-GB"
+curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/lessons/10"
 ```
 
 ## API at a glance
 
 | Route | Purpose |
 |---|---|
-| `GET /v1/modules` · `/v1/modules/{moduleId}` · `/v1/modules/{moduleId}/lessons` | Theory modules and their lessons |
 | `GET /v1/lessons` · `/v1/lessons/{lessonId}` | Lessons (chapters) with HTML content and resources |
-| `GET /v1/lessons/{lessonId}/questions` | The lesson's full question set, ordered by the sequencer |
-| `GET /v1/questions` · `/v1/questions/{questionId}` · `/v1/questions/{questionId}/revisions/{version}` | Questions (answer-free) |
 | `GET /health/live` · `/health/ready` | Probes (no auth) |
+
+The question and module catalogue routes (`/v1/questions*`, `/v1/lessons/{lessonId}/questions`,
+`/v1/modules*`) were retired: they exposed the whole question bank with no entitlement or sequencing
+check. Questions now reach the app only inside a lesson attempt (theory first-shipment plan §15).
 
 Conventions:
 

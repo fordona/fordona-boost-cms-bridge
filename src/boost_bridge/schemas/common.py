@@ -23,11 +23,6 @@ class APIModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, frozen=True)
 
 
-class Media(APIModel):
-    type: str = Field(description="image, video, audio or document", examples=["image"])
-    url: str = Field(description="Absolute, public, immutable asset URL.")
-
-
 class Localized(APIModel):
     locale: str | None = Field(description="Locale this representation is in.", examples=["sv-SE"])
     available_locales: list[str] | None = Field(
