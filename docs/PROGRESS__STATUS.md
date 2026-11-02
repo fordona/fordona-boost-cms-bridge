@@ -327,3 +327,117 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** NO, blocked on the owner. P2.T1's and P2.T2's acceptance runs need **P0.T3: a Boost
   delivery token and grading token**. P2.T3 depends on both being ticked; P3 needs all of P0.
 - **Next task:** with the tokens: P2.T1 acceptance run → P2.T2 live run and commit of `stub-data/` → P2.T3.
+
+
+### 2026-11-02 · P2.T3 · Boost stub service
+
+- **Status:** PARTIAL (one sub-item deliberately deferred; the task cannot be ticked while its
+  dependencies P2.T1 and P2.T2 are themselves PARTIAL — see those entries)
+- **Repo / branch / commit:** BFF · feat/theory-app-implementations · 6f8c0f9
+- **Owner instruction recorded:** "continue implementations" (2026-11-02). P2.T3's own dependencies are both
+  PARTIAL (P2.T1, P2.T2), so this is a second layer of "started ahead of the tracker's order" — recorded so a
+  later session knows this was deliberate, not an oversight.
+- **What was done:**
+  - `src/boost_stub/`: a second FastAPI app (`config.py`, `logging.py`, `upstream.py`, `auth.py`, `changes.py`,
+    `data.py`, `transforms.py`, `container.py`, `deps.py`, `responses.py`, `main.py`, `routes/*`), independent of
+    `boost_bridge` (no shared imports; it has its own settings/logging/HTTP-client code).
+  - **Change feed** (`changes.py`, `container.poll_once`): polls Boost's module/lesson/question lists plus the
+    generated templates/synthetic questions every `STUB_POLL_SECONDS` (default 60), diffs against a SQLite
+    snapshot (`tracked_entity`), writes one `change_log` row per PUBLISHED/UNPUBLISHED difference with a strictly
+    increasing `seq`. `feed()` hides a row until `STUB_VISIBILITY_LAG_SECONDS` after it was written (commit-order
+    safety, §13.3) and raises `CursorExpiredError` for a cursor at or before the purge watermark (`purge()`,
+    `STUB_RETENTION_SECONDS`).
+  - **Question templates and topics**: served entirely from `GeneratedData` (`data.py`, loads
+    `stub-data/templates.json`/`synthetic.json`), no Boost call. Topics are derived — one per lesson with a
+    published template in the module, matching the `lesson-{lessonId}` key every question is given.
+  - **Lessons and questions**: proxied from Boost (existing lists + the new `/revisions/{version}` endpoints),
+    with `transform_lesson_item`/`transform_question_item` (`transforms.py`) adding `translation.blocks` /
+    `shared.topicKey` + `translation.prompt`/`options[].blocks`, keeping the legacy plain-text fields. The
+    multi-value `id=` filter (§13's requirement, Boost's own support unverified) is enforced by the stub itself:
+    a filtered list request fetches every page from Boost and filters in Python, never trusting upstream to do it.
+  - **Batch endpoints** (new, §13.2 #5/#6): `questions/revisions` and `grading/questions/revisions` split a
+    ref list into synthetic (served locally) and real (fanned out in parallel to Boost's existing single-revision
+    endpoints via `asyncio.gather`), merging `missing[]` for anything not found. Grading calls Boost **once per
+    configured locale** per real ref to assemble the multi-locale `explanation` map, since today's Boost is
+    presumed to answer one locale at a time (matches `boost_bridge`'s own "still unverified" caveat for delivery).
+  - **No identity of its own**: every stub endpoint — proxied or local — probes the caller's token against Boost
+    itself before serving (`auth.py`): a delivery-scoped call to `GET /v1/delivery/modules`, a grading-scoped call
+    to a reserved, never-real id at the existing single-revision grading path (404 = valid scope). A success is
+    cached 30 s per token; a failure is never cached, so a token that starts working is picked up immediately.
+  - **Isolation** (plan §4.5): `boost_stub` excluded from `[tool.hatch.build.targets.wheel].packages`, so it is
+    never installed as part of the project wheel; a new Dockerfile stage `boost-stub` runs it from source
+    (`PYTHONPATH=/app/src`) with the shared dependency set, while the `runtime` stage is untouched. Added
+    `import-linter` (new dev dependency) with an `independence` contract between `boost_bridge` and `boost_stub`,
+    wired into the CI `checks` job.
+- **Tests:**
+  - New unit tests: `test_transforms.py` (23), `test_changes.py` (15), `test_auth.py` (13), `test_data.py` (9),
+    `test_container.py` (3), `test_isolation.py` (2) — 65 total, all passing.
+  - **`test_stub_against_contract_suite.py`**: the actual P2.T1 suite, run as a subprocess, against a **live**
+    instance of the stub (real `uvicorn.Server`s on real sockets, in threads) backed by a small in-process
+    stand-in for Boost (`fake_boost.py`) built from `fixture_data.py` (2 modules; one lesson with 9 real
+    questions needing no top-up, two thin lessons topped up with synthetic ones — exercising the real P2.T2
+    `generate()` as the actual data source). Result: **51 of 52 tests pass**;
+    `test_expired_cursor_is_410` is deselected (see "Decisions" below) and is covered directly by
+    `test_changes.py`'s `CursorExpiredError` tests instead.
+  - **`tests/integration/test_docker_stages.py`** (needs Docker, ran locally): builds `--target runtime` and
+    `--target boost-stub` for real and checks (a) `runtime` contains no `boost_stub` files
+    (`find / -iname '*boost_stub*'`), (b) `runtime` still has `boost_bridge` importable, (c) the `boost-stub`
+    image actually starts and serves `/openapi.json`. All three passed.
+  - `uv run lint-imports --config pyproject.toml` → 1 contract kept, 0 broken.
+  - Full suite: `uv run pytest -q` → 333 passed, 52 skipped (contract suite, no base URL) / 385.
+    `uv run ruff check .` → all checks passed; `uv run ruff format --check .` → 114 files already formatted;
+    `uv run mypy src scripts` → no issues in 57 files; `uv run mypy --strict src/boost_stub
+    tests/unit/boost_stub` → no issues in 27 files.
+  - **Bugs found and fixed while building this** (none shipped):
+    - a route-ordering bug: `/questions/{question_id}` was registered before the new `/questions/revisions`,
+      so FastAPI matched the batch path as `question_id="revisions"` and 404'd it — caught immediately by the
+      live acceptance test, fixed by moving the literal path first (now documented in `CLAUDE.md`);
+    - `topics`'s `module_id` parameter had no `Query(alias="moduleId")`, so the real query name was rejected
+      as 422 "missing" — same root cause class as the route-ordering bug (FastAPI/Boost naming mismatch), same
+      test caught it;
+    - the fake-Boost fixture initially ignored the `locale` query param on single-item endpoints, which looked
+      like a stub bug (`test_batch_honours_locale[en-GB]` failing) until traced to the fixture;
+    - the `boost-stub` Docker image crashed on startup: its SQLite path default resolves under `/app`, which is
+      root-owned at that point in the build (`WORKDIR` runs before `USER app`) — fixed with an explicit
+      `mkdir`+`chown` of a `/app/data` directory, caught only by actually running the built image;
+    - `tests/integration/test_docker_stages.py` itself crashed capturing `docker build`'s output on Windows
+      (`UnicodeDecodeError`, cp1252 can't decode buildkit's box-drawing characters) — fixed with
+      `encoding="utf-8", errors="replace"`;
+    - **a real bug in `transforms.html_to_blocks`**, caught by its own unit test, not the integration test: each
+      `<li>` flushed as its own block, so a 2-item list became two separate text blocks instead of one list
+      block. Fixed (list items now accumulate within one block, separated by newlines, flushing only when the
+      list itself ends).
+- **Decisions taken where the plan is silent (please confirm or correct):**
+  1. **Token scope is enforced by probing Boost, never by the stub's own judgement.** The plan says the stub
+     "forwards the caller's bearer token to Boost unchanged, so token scopes stay real" — true for an endpoint
+     the stub already proxies per request, but several §13 endpoints (the change feed, `question-templates`,
+     `topics`, an all-synthetic batch) never call Boost at all. Without a probe, nothing would check those
+     tokens. The probe is cached 30 s per token to bound the extra Boost load.
+  2. **The stub's own poll needs its own credential** (`STUB_POLL_TOKEN`), distinct from a caller's forwarded
+     token, since the background poll isn't triggered by any one request.
+  3. **The §13 batch endpoints and the single-question-revision endpoint get `Cache-Control: … immutable`**
+     (matches §13.5's list, which names "3, 4, 5, and the existing single question revision"); the **grading**
+     batch does not (§13.5 does not list it — grading content is sensitive and not meant for public caching).
+  4. **The in-memory LRU of immutable revisions (tracker item) is deliberately not built.** Revisions are
+     immutable, so an uncached repeat fetch from the stub is correct, just not free; the BFF's Redis cache and
+     the engine's in-memory snapshot are what actually sit on the learner's hot path, not the stub. Building a
+     second cache here felt like speculative work the plan didn't ask for. Flagged for reconsideration once the
+     stub is under real load in staging.
+  5. **`test_expired_cursor_is_410` is deselected from the live acceptance run**, not weakened or deleted: a
+     single short-lived test server can't produce "cursor 0 is still valid" and "some cursor is expired"
+     simultaneously without an operator-aged server (exactly the real-world reason `CONTRACT_EXPIRED_CURSOR` is
+     an externally-supplied env var in the first place, per the P2.T1 entry). The behaviour itself is unit-tested
+     directly against `ChangeTracker`.
+- **Issues found / open risks:**
+  - `stub-data/templates.json`/`synthetic.json` do not exist yet (P2.T2's live run is pending P0.T3), so the
+    stub currently has nothing to serve for `question-templates`/`topics` in a real deployment. Code and tests
+    are unaffected (they supply their own fixture data).
+  - Grading's per-locale fan-out doubles Boost calls for every real grading batch; acceptable for a stub, worth
+    watching if Boost rate-limits aggressively.
+  - Boost's exact single-question grading response shape (plain string explanation vs. something richer) is
+    still inferred, same caveat as `boost_bridge`'s own Boost models.
+- **Ready to continue:** NO, blocked on the owner. P0.T3 (Boost delivery + grading tokens) unblocks: P2.T1's
+  acceptance run against real Boost, P2.T2's live run (and committing `stub-data/`), and P2.T4 (deploying the
+  stub to staging, which also needs P0.T3 per its own `Dep`). P3 (the engine) needs P0.T2 and P0.T4 too.
+- **Next task:** P2.T4 (Repo: BFF/EXT) once P2.T3 is deployable — it is EXT work (Dokploy), so largely yours;
+  otherwise, with the tokens: P2.T1/P2.T2 acceptance runs.
