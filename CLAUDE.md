@@ -48,6 +48,8 @@ src/boost_bridge/
   core/              config, logging, middleware, errors, auth (Kinde JWT), locale, clock, context
 src/boost_stub/      (P2.T3) the Boost stub — a separate FastAPI app, see "Stub isolation"
 migrations/          Alembic (`alembic upgrade head` is a pre-deploy step, never at app start)
+scripts/             developer scripts, not in the image: `generate_stub_templates.py` (P2.T2)
+stub-data/           the stub's generated data (`templates.json`, `synthetic.json`), committed
 tests/               unit/ · api/ · integration/ (Docker) · demo/ · contract/ (P2.T1)
 ```
 
@@ -60,11 +62,11 @@ uv sync                                   # install (uv.lock is the only lockfil
 uv run pytest -q                          # unit + api; integration auto-skips without Docker
 uv run pytest -m integration              # Postgres via testcontainers (needs a Docker daemon)
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src                           # strict
+uv run mypy src scripts                   # strict
 uv run uvicorn boost_bridge.main:app --reload
 ```
 
-A task is not done until **pytest, ruff (check + format) and mypy** are all green. Report real
+A task is not done until **pytest, ruff (check + format) and mypy (`src scripts`)** are all green. Report real
 counts (`N passed, M skipped`), never "tests pass".
 
 ---

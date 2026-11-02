@@ -24,7 +24,7 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy src
+      - run: uv run mypy src scripts
       # Integration tests run too: the runner has Docker for testcontainers.
       - run: uv run pytest -m "not contract"
 
