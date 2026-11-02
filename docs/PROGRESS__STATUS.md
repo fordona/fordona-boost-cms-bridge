@@ -1603,3 +1603,79 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   - None new from this task.
 - **Ready to continue:** YES.
 - **Next task:** P4.T8 (lesson state endpoint) — depends on P4.T7, which is now done.
+
+### 2026-11-03 · P4.T8 · Lesson state endpoint
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 7645531a
+- **What was done:**
+  - `AttemptService.getLessonState(userId, lessonId)`, `@Transactional(readOnly = true)`, and
+    `GET /internal/theory/v1/lessons/{lessonId}`. Reuses `UnlockService.resolve(...)` (P4.T2) for the
+    lock/current/completed status, and `TheoryEntitlement.isUnitEntitled` a second time against the
+    target lesson's own unit to distinguish *why* it's locked.
+  - `status` is `UnlockService.LessonUnlockStatus`'s own name (`COMPLETED`/`CURRENT`/`LOCKED`), not the
+    app-facing word ("available") the public lesson-screen example in Plan §7.3 uses for the same
+    concept — see the deviation note below.
+  - `questionCount`: a real open attempt's own `LESSON`-phase item count when one exists; otherwise a
+    **dry run** of `QuestionSetSelector.select(...)` with `attemptNo = countAttempts + 1` (the same
+    attempt number `start()` would use next), discarded without ever reaching `insertAttempt`/
+    `insertItem`. A locked lesson never calls the selector at all and reports `questionCount = 0` —
+    not just to save the call, but so an unentitled unit's question count is never computed or
+    returned, consistent with Plan §7.3's "paid content never leaves the server" intent for the theory
+    blocks (the count is a smaller leak, but the same principle).
+  - `estimatedMinutes`: the lesson's authored value when set; otherwise `ceil(questionCount * 45 / 60)`.
+  - New DTOs: `LessonStateDTO(status, locked, lockReason, openAttempt, questionCount, estimatedMinutes,
+    lessonVersion)` and `LessonOpenAttemptRefDTO(attemptId, phase)`, where `phase` is the open attempt's
+    own `status` (`IN_LESSON`/`IN_RETRY`), not the per-item `phase` field.
+- **Deviations from the plan (both logged rather than guessed past):**
+  1. **Locked lessons return 200, not 403.** Plan §7.3's "Locked lessons: 403 `THEORY_LESSON_LOCKED` or
+     `THEORY_MODULE_LOCKED`" describes the **public** `GET /v1/lessons/{lessonId}` (BFF→app) contract.
+     Plan §7.4 is explicit that the **internal** engine endpoint is different: *"The BFF never decides
+     access itself: it fetches theory only when the engine says the lesson is not locked"* — which only
+     makes sense if the engine reports `locked` as a field, not a thrown exception, since the BFF has to
+     branch on it to decide whether to even call Boost for the theory blocks. The P4.T8 tracker entry's
+     own test line ("locked → 403 with the right code") reads as carried over from `start()`'s behaviour
+     and conflicts with §7.4's explicit sentence for this specific endpoint. Followed §7.4 (the more
+     specific, more explicit text) over the tracker's test wording: this endpoint returns 200 with
+     `locked: true` and `lockReason` set to `ErrorCode.Theory.MODULE_LOCKED`/`LESSON_LOCKED`. `start()`
+     and `answer()` are unaffected and still throw as before — only this read-only state check differs,
+     deliberately, because only this one is in the BFF's own access-decision path.
+  2. **`estimatedMinutes`'s fallback formula is incomplete.** Plan §7.3 specifies "authored value, else
+     reading time + media durations + 45 s × questions," but the module-structure table (row 72) states
+     plainly that lesson theory content is "Not modelled" in the engine — it lives in Boost and is
+     fetched only by the BFF (Plan §7.3's own "Composition" line for this exact endpoint lists what the
+     engine supplies as "lock, status, open attempt, `questionCount` and `lessonVersion`" and does not
+     include `estimatedMinutes` there, which lines up with this). The engine therefore has no reading
+     time or media durations to compute with, only the question count. It returns the one component it
+     can (`45s × questionCount`) rather than silently treating a partial computation as the full
+     formula. Flagging for whoever builds the BFF-side theory hydration: the BFF has the actual blocks
+     on every call already (it fetches them from Boost to compose the response body), so it is the
+     natural place to compute or override the complete figure — this value should likely be treated as
+     a floor, not the final number, until that happens.
+- **Tests:**
+  - `AttemptServiceTest` (+9 new tests, 36/36 total): unknown lesson → 404; unit not entitled → locked
+    with `MODULE_LOCKED`; previous lesson not completed → locked with `LESSON_LOCKED`; unlocked with no
+    attempt → `CURRENT` with the preview count and zero attempt rows written; the preview count matches
+    what `start()` then actually creates; an open attempt's ref and its own item count; completed (no
+    wrong answers) → `COMPLETED` status with no open attempt; authored `estimatedMinutes` used as-is;
+    no authored value → the 45 s/question fallback.
+  - `TheoryAttemptInternalControllerTest` (+4 new tests, 17/17 total): missing internal token → 403;
+    unknown lesson → 404; locked → 200 with `locked: true` and the right `lockReason` (confirms the
+    deviation above is what actually ships, not just what the service layer does); an open attempt's
+    ref and question count round-trip through the controller.
+  - No real test bugs this time — the P4.T7 fixtures (one unit/lesson/3-question-template, entitled by
+    default) covered this task's scenarios without new seeding traps.
+  - Full suite: `./gradlew test --no-daemon -q`, exit code 0.
+- **Issues found / open risks:**
+  - `levelDropAllowed` (P4.T6) still unwired — unrelated to this task, carried forward again.
+  - The two deviations above are genuine, documented interpretations of a plan that is internally
+    inconsistent for this one endpoint (§7.3 vs §7.4 on the 403 question; §7.3's own two sentences on
+    what the engine supplies vs the full `estimatedMinutes` formula). Worth a one-line confirmation from
+    whoever owns the plan before the BFF side is built against this contract, so the BFF doesn't get
+    built expecting a 403 that will never come, or a complete `estimatedMinutes` the engine can't give.
+- **Ready to continue:** YES.
+- **Next task:** none queued in P4 — **P4 Phase exit** ("the full attempt flow passes in Testcontainers;
+  no answer key appears in any pre-answer response; all concurrency tests pass") is the remaining
+  checkbox before P5. All of its component pieces have passed in this session's tests across P4.T1–T8;
+  worth a deliberate end-to-end pass over the tracker's P4 Phase exit checklist before calling P4 fully
+  closed and starting P5.T1 (migrations: progress tables).

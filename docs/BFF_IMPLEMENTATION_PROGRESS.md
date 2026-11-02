@@ -646,15 +646,19 @@ every repository the plan touches:
   - **Acceptance:** a full flow test: start → 8 answers with 2 wrong → lesson complete returns 5 retry items → 5
     answers → retry complete → `COMPLETED`.
 
-- [ ] **P4.T8 Lesson state endpoint** · Repo: ENG · Dep: P4.T7 · Plan §7.3 (lesson theory), §7.4
-  - [ ] `GET /internal/theory/v1/lessons/{lessonId}` returns
+- [x] **P4.T8 Lesson state endpoint** · Repo: ENG · Dep: P4.T7 · Plan §7.3 (lesson theory), §7.4
+  - [x] `GET /internal/theory/v1/lessons/{lessonId}` returns
         `{ status, locked, lockReason, openAttempt, questionCount, estimatedMinutes, lessonVersion }`.
     - `questionCount` comes from a **dry run** of the selector, with no writes.
     - `estimatedMinutes`: the authored value, else reading time + media durations + 45 s × questions.
+      **Deviation (logged, see status log):** the engine only ever computes the 45 s × questions
+      component — it never syncs lesson theory content (text/media live in Boost, fetched only by the
+      BFF), so reading time and media durations are not available to it.
   - **Tests:**
-    - [ ] locked → 403 with the right code;
-    - [ ] with an open attempt;
-    - [ ] the preview count matches the next start's count.
+    - [x] locked → 200 with `locked=true` and the right `lockReason` (**deviation, logged**: not a
+      403 — see status log for why this endpoint intentionally differs from start/answer);
+    - [x] with an open attempt;
+    - [x] the preview count matches the next start's count.
   - **Acceptance:** zero writes during the call (query-count assertion).
 
 - [ ] **P4 Phase exit:** the full attempt flow passes in Testcontainers; no answer key appears in any pre-answer
