@@ -1,0 +1,888 @@
+# Fordona Theory: Implementation Progress
+
+The implementation tracker for `fordona-theory-first-shipment-architecture.md` (the **plan**, revision 5). It covers
+every repository the plan touches:
+
+- **fordona-engine:** Spring Boot, `learn/theory`.
+- **fordona-boost-cms-bridge:** the BFF and the Boost stub.
+- **Work owned by others:** tracked so blockers stay visible.
+
+---
+
+## How a Claude Code session uses this file
+
+**Read before every task:**
+1. This file. Find the **first unticked task whose dependencies are all ticked**.
+2. The plan sections the task cites (`Plan §x.y`). The plan is the source of truth for every name, shape and rule.
+3. The repository's own `CLAUDE.md` and `.claude/rules/*`. For fordona-engine these are binding:
+   - store pattern; `Payload<T>`;
+   - `ErrorCode.*` + i18n in **both** `messages.properties` and `messages_sv.properties`;
+   - Flyway in `db/migration/learn`; no cross-schema FKs;
+   - `@Slf4j` with `correlationId`; jobs only in `job/scheduler`;
+   - no TODOs.
+4. `PROGRESS__STATUS.md`: the last entries, for open issues and the "ready to continue" verdict.
+
+**Working rules:**
+- **One task per session**, unless the task says otherwise. Don't start a task whose dependencies aren't ticked.
+- **Mark progress:** when you start, append ` — IN PROGRESS (session date)` to the task line.
+- **Ticking boxes:**
+  - tick a **sub-task** when its code exists **and** its tests pass;
+  - tick a **task** only when every sub-task is ticked **and** its *Acceptance* checks pass;
+  - tick a **phase** only when every task is ticked **and** its *Phase exit* checks pass.
+- **Cancelled or replaced items:** strike them through (`- [x] ~~text~~ — reason`) instead of deleting them.
+- **Never weaken a test to make it pass.** If the plan is wrong or ambiguous, stop. Record it in
+  `PROGRESS__STATUS.md` as **BLOCKED** with the question, and don't guess.
+- **After each task**, add an entry to `PROGRESS__STATUS.md` (template inside that file): what was done, test
+  results with commands and counts, deviations, and a "ready to continue" verdict.
+- **Commits:** one task per branch or PR when possible. Mention the task ID (e.g. `P4.T3`) in the commit message.
+- **Never commit secrets.** Real values go in Dokploy only.
+
+**Legend:**
+- `- [ ]` to do
+- `- [x]` done
+- `- [x] ~~…~~` cancelled
+- **Dep:** tasks that must be ticked first
+- **Repo:** `ENG` = fordona-engine, `BFF` = fordona-boost-cms-bridge, `EXT` = outside our repos
+
+**Test commands:**
+- **ENG:** `./gradlew test` (all) or `./gradlew test --tests '<Class>'`; `./gradlew compileJava` for a fast check.
+- **BFF:** `uv run pytest`, `uv run ruff check .`, `uv run mypy src` (whatever the repo already uses: check
+  `pyproject.toml`).
+
+---
+
+## Phase overview
+
+- [ ] **P0** Decisions and prerequisites
+- [ ] **P1** BFF security cleanup and staging infrastructure
+- [ ] **P2** Boost content contract (§13) and the Boost stub
+- [ ] **P3** Engine: content read model, sync and snapshot
+- [ ] **P4** Engine: attempts, grading and the forced retry phase
+- [ ] **P5** Engine: progress, home, learning path, readiness
+- [ ] **P6** BFF: the public API
+- [ ] **P7** End-to-end quality: concurrency, load, observability, runbook
+- [ ] **P8** Hand-off to the mobile developer
+- [ ] **P9** Production readiness (mostly external blockers)
+
+**Dependency order:**
+- P0 → P1 → P2.
+- P3 depends on P2.T1 (contract) and P2.T3 (stub) for integration tests.
+- P4 → P3. P5 → P4.
+- P6 depends on P2, P4 and P5 (it can start on P4's endpoints while P5 is in progress).
+- P7 → P6. P8 → P7. P9 → P8 plus the external work.
+
+---
+
+## P0. Decisions and prerequisites
+
+- [ ] **P0 — phase done**
+
+- [x] **P0.T1 Copy the plan where every session can read it** · Repo: BFF · Dep: none
+  - [x] Copy `fordona-theory-first-shipment-architecture.md` into `fordona-boost-cms-bridge/docs/`.
+  - [x] Copy this file and `PROGRESS__STATUS.md` into the same folder. That folder is the one sessions are told to
+        read; it must be the single live copy.
+  - [x] Add a one-line pointer to the plan in `fordona-engine/CLAUDE.md`, as a "Theory first shipment" reference.
+  - **Acceptance:** a fresh session started in either repo finds all three files at the paths above.
+
+- [ ] **P0.T2 Product and owner sign-offs (record each answer in `PROGRESS__STATUS.md`)** · Repo: EXT
+  - [ ] O-2: first-attempt template is hash-spread (Plan §5.2).
+  - [ ] O-4: sequential unlocking, including across units (Plan §1 decision 10).
+  - [ ] O-5: `similar_scope` default `REACHED` (Plan §5.3).
+  - [ ] O-6 / O-7: no retry phase when W = 0; no ceiling on retry size.
+  - [ ] O-9: Start Quiz doesn't require finishing the theory.
+  - [ ] O-11: a retake counts as activity; daily challenge = 3 distinct lessons; week start Sunday or Monday.
+  - [ ] O-12: the readiness formula (Plan §5.7).
+  - [ ] O-10: who processes and hosts media (Boost, or R2 + Cloudflare Stream).
+  - **Acceptance:** every decision has an answer, an owner and a date. Any answer that differs from the plan's
+    recommendation is logged as a plan change before P3 starts.
+
+- [ ] **P0.T3 Credentials and identifiers** · Repo: EXT
+  - [ ] Confirm the engine's real `KINDE_AUDIENCE` in Dokploy (expected `https://api.fordona.dev`). This value is used
+        by the BFF.
+  - [ ] Get a **delivery** service token for the BFF from the Boost owner (not a `bst_` token).
+  - [ ] Get a **delivery** token and a **grading** token for the engine from the Boost owner.
+  - [ ] Generate the internal token: `openssl rand -base64 48`. Store it only in Dokploy, on both apps.
+  - [ ] Hand Plan §13 to the Boost owner and agree on a delivery date (O-1).
+  - **Acceptance:** all values are stored in Dokploy or a password manager; none are in any repo.
+
+- [ ] **P0.T4 Postgres hardening** · Repo: EXT
+  - [ ] Remove the external port 5432 on `fordona-gearbox-l1bqji`, or IP-restrict it. Use an SSH tunnel for DBeaver.
+  - [ ] Create the role and database:
+        `CREATE ROLE boost_bridge LOGIN PASSWORD '…'; CREATE DATABASE boost_bridge OWNER boost_bridge; REVOKE CONNECT ON DATABASE boost_bridge FROM PUBLIC;`
+  - [ ] Record `SHOW max_connections;` and the engine's Hikari size in `PROGRESS__STATUS.md`.
+  - **Acceptance:** an `nc`/`psql` attempt from outside the server to port 5432 fails (or succeeds only from an
+    allowed IP), and `boost_bridge` can connect only to its own database.
+
+- [ ] **P0 Phase exit:** T1–T4 ticked; no BLOCKED entries open in `PROGRESS__STATUS.md`.
+
+---
+
+## P1. BFF security cleanup and staging infrastructure
+
+- [ ] **P1 — phase done**
+
+- [ ] **P1.T1 Retire the leaky catalogue routes (Plan §15, R-11)** · Repo: BFF · Dep: P0.T1
+  - [ ] Search the web app (`fordona-trafikskola-web`, `fordona-next`) and any other client for calls to
+        `/v1/questions`, `/v1/lessons/{id}/questions` and `/v1/modules`. Record the findings.
+  - [ ] If a client uses them, write its migration path into `PROGRESS__STATUS.md` and get approval before deleting.
+  - [ ] Delete `api/routes/questions.py` and the `/{lessonId}/questions` route in `api/routes/lessons.py`, along with
+        the service methods and schemas used only by them.
+  - [ ] Delete `api/routes/modules.py` (replaced by `GET /v1/learning-path` in P6).
+  - [ ] Keep the `GET /v1/lessons/{lessonId}` path; its new meaning is implemented in P6.T5.
+  - [ ] Remove or replace the tests that covered the deleted routes.
+  - **Unit tests:** the route table no longer contains the deleted paths, verified by a test that iterates
+    `app.routes`.
+  - **Acceptance:** `GET /v1/questions` and `GET /v1/lessons/1/questions` return 404 on a local run; the full test
+    suite is green.
+
+- [ ] **P1.T2 Deploy the BFF to staging on Dokploy (infrastructure smoke test)** · Repo: BFF/EXT · Dep: P1.T1, P0.T3, P0.T4
+  - [ ] Redis service `bff-redis` in the engine's Dokploy project, with no external port.
+  - [ ] Application `fordona-bff`: Dockerfile build, container port 8000, domain with HTTPS (Let's Encrypt).
+  - [ ] Environment: the existing variables only (`APP_ENV=staging`, Kinde trio, `BOOST_*` with `service_token`,
+        `DATABASE_URL` for `boost_bridge`, `REDIS_URL`).
+  - [ ] Health check (Swarm settings JSON, Python-based, because the image has no curl).
+  - [ ] Migrations: `alembic upgrade head` (command override, or once via the container terminal).
+  - **Acceptance:**
+    - `/health/live` returns 200 and `/health/ready` returns 200;
+    - an authenticated call with a Kinde user token returns non-401;
+    - the startup logs contain no `access_boundary_not_enforced`.
+
+- [ ] **P1 Phase exit:** the staging BFF is healthy, and no leaky route exists in any deployed build.
+
+---
+
+## P2. Boost content contract (§13) and the Boost stub
+
+- [ ] **P2 — phase done**
+
+- [ ] **P2.T1 Contract test suite for §13** · Repo: BFF · Dep: P0.T1 · Plan §13
+  - [ ] Create `tests/contract/boost_content_v1/`, parametrised by base URL + tokens from env
+        (`CONTRACT_BOOST_BASE_URL`, `CONTRACT_DELIVERY_TOKEN`, `CONTRACT_GRADING_TOKEN`). Skip when unset.
+  - [ ] Tests per endpoint (§13.2):
+    - [ ] change feed;
+    - [ ] template list and revision;
+    - [ ] lesson revision;
+    - [ ] question batch;
+    - [ ] grading batch;
+    - [ ] topics;
+    - [ ] the multi-value `id=` filter.
+  - [ ] Rules:
+    - [ ] batch `missing[]` semantics;
+    - [ ] more than 100 refs → 422;
+    - [ ] `CURSOR_EXPIRED` → 410;
+    - [ ] `seq` strictly increasing;
+    - [ ] revision endpoints send `Cache-Control: … immutable` and `ETag`;
+    - [ ] lists answer `If-None-Match` with 304;
+    - [ ] the delivery token gets 401/403 on `/v1/grading/**`.
+  - [ ] Shape checks (§13.4):
+    - [ ] template `shared.questions[]` sorted;
+    - [ ] question `topicKey`, `prompt` blocks, `options[].blocks`;
+    - [ ] grading `correctOptionId` + per-locale explanation blocks;
+    - [ ] lesson `translation.blocks`.
+  - [ ] Block validation helper: the block types and required fields from Plan §4.6.
+  - **Acceptance:** the suite runs and **fails cleanly** (it doesn't error) against today's Boost, which proves the
+    assertions are meaningful; it is wired into CI as a separate job.
+
+- [ ] **P2.T2 Template generator** · Repo: BFF · Dep: P0.T3 · Plan §4.5
+  - [ ] `scripts/generate_stub_templates.py`: reads published modules, lessons and questions from today's Boost (delivery
+        token from env).
+  - [ ] Per lesson:
+    - [ ] sort by (difficulty, id);
+    - [ ] deal round-robin into `k = max(1, floor(n/8))` templates, spreading the remainder one per template;
+    - [ ] top lessons with fewer than 3 real questions up to 8 with synthetic `[DEMO]` questions.
+  - [ ] Template ids ≥ 9,000,000; a `generation` number; a `version` bump only for changed templates.
+  - [ ] Writes `stub-data/templates.json` and `stub-data/synthetic.json`, deterministically.
+  - [ ] `synthetic.json` holds full questions with keys and explanations, covering **every block type** (Plan §4.6):
+        text, image, animation (lottie and video_loop), video with captions, audio with transcript, rule_card. It
+        also covers at least one option with an image.
+  - **Unit tests:**
+    - [ ] deterministic output (two runs on the same input are byte-equal);
+    - [ ] difficulty spread per template within ±1 level;
+    - [ ] the thin-lesson top-up;
+    - [ ] id range.
+  - **Acceptance:** the generated files are committed, and the generator re-run produces no diff.
+
+- [ ] **P2.T3 Boost stub service** · Repo: BFF · Dep: P2.T1, P2.T2 · Plan §4.5, §13
+  - [ ] Package `src/boost_stub/` with its own FastAPI app (`boost_stub.main:app`), its own settings
+        (`STUB_UPSTREAM_BOOST_URL`, `STUB_DATA_DIR`, `STUB_SQLITE_PATH`, `STUB_POLL_SECONDS=60`).
+  - [ ] Endpoints:
+    - [ ] templates served from `templates.json`;
+    - [ ] change feed from the SQLite tracker, with a 5 s visibility lag, `CURSOR_EXPIRED`, and a 60 s poll of
+          upstream lists;
+    - [ ] modules and lessons proxied, with `contentHtml` + `resources` converted to blocks (a supported HTML
+          subset; unknown tags dropped and logged);
+    - [ ] questions proxied: prompt and option blocks, `topicKey = lesson-{lessonId}`;
+    - [ ] batch endpoints as parallel fan-out to upstream singles, with an in-memory LRU of immutable revisions;
+    - [ ] grading proxied with the caller's token; explanation → blocks;
+    - [ ] synthetic ids (≥ 9,000,000) served from `synthetic.json`, including grading.
+  - [ ] Forwards the caller's `Authorization` header unchanged; adds `X-Boost-Stub: true` to every response.
+  - [ ] Cache headers per §13.5.
+  - [ ] Isolation:
+    - [ ] add `import-linter` with a contract that `boost_bridge` must not import `boost_stub`, run in CI;
+    - [ ] a Dockerfile stage `boost-stub` (CMD `uvicorn boost_stub.main:app --port 8080`);
+    - [ ] the `runtime` stage must not copy `src/boost_stub`.
+  - **Unit tests (respx-mocked upstream):**
+    - [ ] each transformation (HTML → blocks, question → blocks, explanation → blocks);
+    - [ ] auth forwarding;
+    - [ ] the header;
+    - [ ] batch partial results;
+    - [ ] change detection.
+  - **Acceptance:**
+    - the P2.T1 suite is **green against the stub** (locally and in CI);
+    - `docker build --target runtime` contains no `boost_stub` files (checked with `docker run … ls`);
+    - import-linter passes.
+
+- [ ] **P2.T4 Deploy the stub to staging** · Repo: BFF/EXT · Dep: P2.T3
+  - [ ] A Dokploy application from the same repo, build stage `boost-stub`, **no domain** (internal only), env
+        `STUB_UPSTREAM_BOOST_URL=https://boost-api.fordona.io`, plus a volume for the SQLite file.
+  - **Acceptance:** from the BFF container, `GET http://<stub-host>:8080/v1/delivery/changes?after=0` with the
+    delivery token returns 200 with `X-Boost-Stub: true`.
+
+- [ ] **P2 Phase exit:** the contract suite is green against the staging stub; the generated data is committed.
+
+---
+
+## P3. Engine: content read model, sync and snapshot
+
+- [ ] **P3 — phase done**
+
+- [ ] **P3.T1 Package skeleton and conventions** · Repo: ENG · Dep: P0 · Plan §6
+  - [ ] Create `io.fordona.engine.learn.theory` with sub-packages:
+        `api/{dto,request}`, `data/{entity,mapper,projection,repository,store}`,
+        `exception/{business,resource,validation}`, `model`, `service`, `content`, `similarity`, `usecase`.
+  - [ ] Add `ErrorCode.Theory` (nested class), following the existing naming: e.g. constant
+        `ErrorCode.Theory.LESSON_NOT_FOUND` with value `"THEORY_LESSON_NOT_FOUND"`. It needs every code from Plan §7.3:
+    - `THEORY_MODULE_LOCKED`, `THEORY_LESSON_LOCKED`;
+    - `THEORY_LESSON_NOT_FOUND`, `THEORY_ATTEMPT_NOT_FOUND`, `THEORY_ITEM_NOT_FOUND`;
+    - `THEORY_REQUEST_ID_CONFLICT`, `THEORY_RESPONSE_CONFLICT`;
+    - `THEORY_PHASE_CLOSED`, `THEORY_PHASE_INCOMPLETE`;
+    - `THEORY_OPTION_INVALID`.
+
+    Add keys for each in `messages.properties` **and** `messages_sv.properties`.
+  - [ ] Exception classes in the right hierarchy (use `/new-exception`). Map 409 cases per the existing
+        `GlobalExceptionHandler` conventions; check how other 409s are produced before adding one.
+  - **Unit tests:** an i18n test that every `ErrorCode.Theory.*` constant has a key in both bundles.
+  - **Acceptance:** `./gradlew compileJava` passes; the i18n test is green.
+
+- [ ] **P3.T2 Flyway migrations: content read model** · Repo: ENG · Dep: P3.T1 · Plan §6
+  - [ ] `V1_0_16__theory_content_read_model.sql` in `db/migration/learn` (use `/new-migration`). Tables:
+    - `content_release` (`release_id`, `source`, `change_cursor`, `activated_at`);
+    - `content_unit` (`title jsonb`, `icon_asset_id`, `status`);
+    - `content_lesson` (`title jsonb`, `current_version`, `estimated_minutes`, `status`);
+    - `content_template` (`current_version`, `status`);
+    - `content_template_question`;
+    - `content_question` (`home_lesson_id`, `current_version`, `status`);
+    - `content_question_revision` (`type`, `difficulty`, `level`, `domain_code`, `topic_tag`, `correct_option_key`,
+      `option_keys jsonb`, `media_kinds jsonb`, `explanation jsonb`, `release_id`);
+    - `question_neighbour`.
+  - [ ] `CHECK` constraints on every status column; indexes on foreign-key-like columns. No cross-schema FKs.
+  - **Acceptance:** the engine starts on a clean database; Flyway validates; a Testcontainers migration test passes.
+
+- [ ] **P3.T3 Boost client (engine side)** · Repo: ENG · Dep: P3.T1 · Plan §7.5, §13
+  - [ ] Config: `theory.boost.base-url`, `theory.boost.delivery-token`, `theory.boost.grading-token`, timeouts. Env
+        overrides in `application.yml`; no defaults for tokens.
+  - [ ] `RestClient`-based `BoostContentClient`:
+    - `changes(after, limit)`;
+    - lists by `id=` filter;
+    - `questionRevisionsBatch(refs)` (≤ 100, chunked);
+    - `gradingRevisionsBatch(refs)`;
+    - `topics(moduleId)`.
+    - Parse `missing[]`.
+  - [ ] **Prod guard:** on the first response with `X-Boost-Stub: true` under the `prod` profile, fail fast (startup
+        check or first-call check that throws and alerts).
+  - [ ] Never log tokens; log `requestId` from the Boost Problem body.
+  - **Unit tests (MockRestServiceServer or WireMock):**
+    - [ ] batch chunking;
+    - [ ] the `missing[]` handling;
+    - [ ] 410 `CURSOR_EXPIRED` mapped to a typed exception;
+    - [ ] the prod guard.
+  - **Acceptance:** a WireMock suite covers every method.
+
+- [ ] **P3.T4 Content validation and sync service** · Repo: ENG · Dep: P3.T2, P3.T3 · Plan §4.3, §4.4
+  - [ ] `ContentSyncService.sync(Instant now, boolean full)`:
+    - read the change feed from `content_release.change_cursor`;
+    - fetch the changed ids;
+    - fetch new grading revisions in batches;
+    - upsert the read model;
+    - apply validation;
+    - store the new cursor;
+    - create a new `content_release` **only if something changed**.
+  - [ ] **Full resync:** `full=true` resets the cursor and reads all lists (`pageSize` 250). It runs on
+        `CURSOR_EXPIRED` too.
+  - [ ] Validation rules (Plan §4.4):
+    - a question is EXCLUDED when its key isn't among its options, options aren't distinct, difficulty is outside
+      1–5, domain or topic is unknown, or a locale is missing;
+    - a template with fewer than 3 valid questions is HIDDEN;
+    - a lesson with no visible template or empty theory is HIDDEN.
+  - [ ] Level mapping from `difficulty_level_map` (default 1–2 easy, 3 medium, 4–5 hard).
+  - [ ] `home_lesson_id` = the lesson of the question's first template by sort.
+  - [ ] `media_kinds` derived from the block types in the prompt and options.
+  - [ ] Unit and lesson titles stored per locale. **No question text or theory stored** (Plan §6 notes).
+  - **Unit tests:**
+    - [ ] each validation rule;
+    - [ ] the level mapping;
+    - [ ] home lesson;
+    - [ ] no release when nothing changed;
+    - [ ] cursor advance.
+  - **Acceptance:** a Testcontainers test syncs the stub's fixtures (recorded responses) into an empty database; a
+    second sync creates no release.
+
+- [ ] **P3.T5 Sync jobs (job module)** · Repo: ENG · Dep: P3.T4 · CLAUDE.md "Scheduled Jobs"
+  - [ ] An `ExternalUseCase` in `learn/theory/usecase` exposing `syncTheoryContent(Instant now, boolean full)`.
+  - [ ] `JobNames.THEORY_CONTENT_SYNC` (every 30 s) and `JobNames.THEORY_CONTENT_FULL_RESYNC` (nightly, R-12).
+  - [ ] Schedulers in `job/scheduler/` implementing `ScheduledJob`:
+    - `@Scheduled` calls `jobRunner.run(name(), this::runNow)`;
+    - `@ConditionalOnProperty` on `fordona.jobs.enabled` + the per-job flag;
+    - `application.yml` entries under `fordona.jobs.configs.*` with env overrides and `lock-at-most-for`.
+  - **Unit tests:** the scheduler delegates to the use case; the property gating.
+  - **Acceptance:** a local run with the stub shows sync audit rows in `job_run`, and only one instance runs it at a
+    time (ShedLock).
+
+- [ ] **P3.T6 In-memory content snapshot** · Repo: ENG · Dep: P3.T4 · Plan §9.2
+  - [ ] An immutable `ContentSnapshot` holding:
+    - units, lessons (titles, versions, `estimated_minutes`) and templates in order;
+    - current question revisions (tags, level, keys, option keys, explanations);
+    - neighbour lists;
+    - the resolved retry policy (added in P4.T1).
+  - [ ] `ContentSnapshotProvider.get()`, held in an `AtomicReference`:
+    - **lazy freshness check**: at most once per 30 s, a single-flight check of `max(release_id)`;
+    - rebuilds when it changes.
+    - Don't use a ShedLock'd job here: **every instance** must refresh.
+  - [ ] Older pinned revisions load on demand into a bounded Caffeine cache (immutable, no expiry).
+  - **Unit tests:**
+    - [ ] atomic swap;
+    - [ ] single-flight under concurrent `get()`;
+    - [ ] no rebuild without a release change;
+    - [ ] the old-revision loader.
+  - **Acceptance:** after a sync creates a release, two engine instances (two Spring contexts in a test) both serve
+    the new snapshot within 30 s.
+
+- [ ] **P3.T7 Neighbour builder (metadata strategy)** · Repo: ENG · Dep: P3.T4 · Plan §8
+  - [ ] `NeighbourBuilder` runs after each release. For every ACTIVE question, rank ACTIVE candidates from the
+        **whole bank** by these groups:
+
+        | Group | Score |
+        |---|---|
+        | Same lesson (other templates), same topic | 1.0 |
+        | Same unit, same topic | 0.8 |
+        | Same lesson, same domain | 0.6 |
+        | Same topic, anywhere | 0.5 |
+        | Same domain, same unit | 0.4 |
+
+        Within a group, sort by closest difficulty, then `questionId`. Keep the top 20. Write `question_neighbour`
+        with `provider = metadata`.
+  - [ ] A `SimilarQuestionProvider` port: `neighbours(questionId)` read from the snapshot.
+  - [ ] `theory.similarity.source=metadata|vector`. Only metadata is implemented; vector is an empty extension point
+        with no code, documented.
+  - **Unit tests:**
+    - [ ] group ordering;
+    - [ ] tie-breaks are deterministic;
+    - [ ] excluded questions are never neighbours;
+    - [ ] at most 20.
+  - **Acceptance:** for the stub data, every question with ≥ 2 same-lesson peers has ≥ 2 neighbours.
+
+- [ ] **P3.T8 Platform endpoints: sync and content report** · Repo: ENG · Dep: P3.T5, P3.T7 · Plan §7.6 · `.claude/rules/platform-module.md`
+  - [ ] `learn/platform/api/TheoryContentPlatformController`:
+    - `POST /v1/platform/theory/content-sync?full=` (calls the same use case);
+    - `GET /v1/platform/theory/content-report`: release, hidden templates and lessons, excluded questions with
+      reasons, similarity coverage, and the per-template difficulty mix (R-7).
+    - The extras-shortfall rate is added in P4.
+  - [ ] Platform-admin permission, the same mechanism as the existing platform controllers.
+  - **Tests:** 401 when unauthenticated; 403 for a non-admin; happy path for both endpoints.
+  - **Acceptance:** after a sync, the report against the stub data lists the generated templates and any synthetic
+    gaps.
+
+- [ ] **P3 Phase exit:** the engine syncs the staging stub every 30 s, holds a snapshot on every instance, and the
+  content report is clean, or its findings are logged.
+
+---
+
+## P4. Engine: attempts, grading and the forced retry phase
+
+- [ ] **P4 — phase done**
+
+- [ ] **P4.T1 Migrations and retry policy** · Repo: ENG · Dep: P3 · Plan §5.6, §6
+  - [ ] `V1_0_17__theory_attempts.sql`:
+    - `lesson_attempt` (all Plan §6 columns, incl. `kind`, `template_id`, `lesson_version`, `selection_strategy`,
+      `selection_reason`, `policy_snapshot jsonb`, phase totals, `retry_extras_short`);
+    - `attempt_item` (incl. answer columns, `response_id`);
+    - `mistake`.
+  - [ ] Constraints:
+    - `UNIQUE(app_user_id, request_id)`;
+    - partial unique `(app_user_id, lesson_id) WHERE status <> 'COMPLETED'`;
+    - PK `(attempt_id, seq)` and `UNIQUE(response_id)`;
+    - indexes `attempt_item(app_user_id, question_id)` and `(app_user_id, answered_at)`, and
+      `mistake(app_user_id, unit_id, status)`;
+    - `CHECK` constraints.
+  - [ ] `V1_0_18__theory_retry_policy.sql`: `retry_policy` with a GLOBAL row holding the defaults:
+        `retry_enabled` true, `extras_per_wrong` 1.5, `extras_min` 2, `extras_max` 5, `level_drop_allowed` 1,
+        `similar_scope` REACHED, `difficulty_level_map`.
+  - [ ] `RetryPolicyResolver`: LESSON > UNIT > GLOBAL, with range validation, cached in the snapshot.
+  - [ ] Platform endpoints `GET /v1/platform/theory/retry-policy` and `PUT …/{scope}/{scopeId}`. A PUT bumps the
+        content release so every instance reloads.
+  - **Unit tests:** resolution order; every range rule (incl. min ≤ max); the PUT validation returns 422.
+  - **Acceptance:** a policy change is visible on a second instance within 30 s.
+
+- [ ] **P4.T2 Entitlement and unlock rules** · Repo: ENG · Dep: P4.T1 · Plan §1 decision 10, §5.1
+  - [ ] Locate today's unit-lock logic (`LearnHubService` / `LearnAccessContext`, free vs subscribed). Expose it as
+        `TheoryEntitlement.isUnitEntitled(userId, unitId)`, cached per user, invalidated on subscription change.
+        **Verify how existing rules identify a unit** (Directus ids vs sort). Map to Boost module ids by **sort
+        order**, and record the mapping decision in `PROGRESS__STATUS.md`.
+  - [ ] `UnlockService` (pure, over the snapshot + the learner's completed set):
+    - lesson n+1 unlocks after lesson n is completed;
+    - the first lesson of unit u+1 unlocks after the last visible lesson of unit u **and** if unit u+1 is
+      entitled;
+    - HIDDEN lessons are skipped.
+  - **Unit tests:**
+    - [ ] first lesson unlocked;
+    - [ ] the skip over a hidden lesson;
+    - [ ] cross-unit with and without entitlement;
+    - [ ] retakes of completed lessons are allowed.
+  - **Acceptance:** a table-driven test covers each `status` value used by the learning path (`completed`,
+    `current`, `locked`).
+
+- [ ] **P4.T3 QuestionSetSelector (`fixed-v1`)** · Repo: ENG · Dep: P4.T2 · Plan §5.2
+  - [ ] A pure port `QuestionSetSelector.select(SelectionContext)` → ordered refs `(questionId, version, templateId)`
+        + strategy id + reason.
+  - [ ] `FixedTemplateSelector`:
+    - first attempt: `hash(app_user_id, lesson_id) mod visibleTemplates`. Use a stable hash (e.g. murmur3 over the
+      ids), never `Object.hashCode`;
+    - retake k: `(firstIndex + k − 1) mod visibleTemplates`;
+    - only valid questions, in template order.
+  - [ ] A config switch `theory.selection.strategy=fixed-v1`.
+  - **Unit tests:**
+    - [ ] stable across JVM runs;
+    - [ ] the spread is roughly uniform across 10k synthetic users (chi-square or a ±10 % bound);
+    - [ ] rotation;
+    - [ ] the template count changing between attempts.
+  - **Acceptance:** the selector is pure; it has no Spring context in its tests.
+
+- [ ] **P4.T4 Start, resume and read attempt** · Repo: ENG · Dep: P4.T3 · Plan §5.1, §6 concurrency, §7.4
+  - [ ] `AttemptService.start(userId, lessonId, requestId)`:
+    - guards: entitlement, the lesson visible and unlocked;
+    - selects and pins items with shuffled `option_order` (`SecureRandom`, stored);
+    - snapshots the policy and `lesson_version`;
+    - inserts the attempt plus items in one batch;
+    - upserts `lesson_progress` (in P5) and bumps `progress_version` (in P5; leave a hook).
+    - **Idempotency:** a `request_id` conflict is a replay; an open-attempt conflict returns the existing attempt
+      (200).
+  - [ ] `get(userId, attemptId)` for resume: 404 for another learner's attempt.
+  - [ ] Internal endpoints:
+    - `POST /internal/theory/v1/lessons/{lessonId}/attempts`;
+    - `GET /internal/theory/v1/attempts/{attemptId}`.
+    - Responses are `Payload<T>` with item **refs only** (`seq`, `phase`, `questionId`, `version`, `optionOrder`,
+      `answered?`); never a key before an answer.
+  - [ ] Internal-route security:
+    - check for an existing internal-token mechanism first;
+    - otherwise add a filter on `/internal/theory/**` that requires a valid JWT **and** an `X-Fordona-Internal-Token`
+      equal (constant-time comparison) to config `theory.internal.token`.
+  - **Tests:**
+    - [ ] happy path;
+    - [ ] 403 locked unit / lesson;
+    - [ ] 404 unknown lesson;
+    - [ ] a replay returns the same attempt;
+    - [ ] a parallel double start creates one attempt (Testcontainers, two threads);
+    - [ ] a missing internal token → 401/403;
+    - [ ] another learner's attempt → 404.
+  - **Acceptance:** no response body contains `correct_option_key` before an answer (assert by JSON search).
+
+- [ ] **P4.T5 Answer endpoint and grading** · Repo: ENG · Dep: P4.T4 · Plan §5.4, §5.5, §6
+  - [ ] `POST /internal/theory/v1/attempts/{attemptId}/responses`:
+    - `SELECT … FOR SHARE` on the attempt;
+    - validate the phase and the option key;
+    - grade from the snapshot;
+    - conditional `UPDATE attempt_item … WHERE answered_at IS NULL`;
+    - store the tag snapshot fields (set at item creation) plus the answer fields;
+    - upsert the ledger (OPEN; RESOLVED with `resolved_via` `REPEAT` / `RETAKE` / `LATER`).
+  - [ ] Idempotency:
+    - the same `responseId` + same option → replay (200, same feedback);
+    - a different option or a reused `responseId` → 409 `THEORY_RESPONSE_CONFLICT`.
+  - [ ] Feedback: `isCorrect`, `selectedOptionKey`, `correctOptionKey`, `correctOptionLabel` (from `option_order`),
+        `explanation` blocks for the request locale (fall back to `sv-SE`).
+  - **Tests:**
+    - [ ] correct / incorrect;
+    - [ ] 422 invalid option;
+    - [ ] 404 unknown seq;
+    - [ ] 409 `PHASE_CLOSED`;
+    - [ ] a replay;
+    - [ ] 409 conflict;
+    - [ ] the ledger transitions (OPEN → RESOLVED → OPEN on a retake);
+    - [ ] two concurrent answers to the same item: exactly one wins.
+  - **Acceptance:** the grading path makes zero database reads of content (verified by a query-count assertion or a
+    repository spy).
+
+- [ ] **P4.T6 Retry composer** · Repo: ENG · Dep: P4.T5, P3.T7 · Plan §5.3
+  - [ ] `E = clamp(ceil(extras_per_wrong × W), extras_min, extras_max)`. W = 0 → no retry phase.
+  - [ ] Repeat items: the same pinned version, **re-shuffled** options.
+  - [ ] Similar items: round-robin over the seeds (wrong items in `seq` order). Walk each neighbour list and apply
+        filters a–f **exactly** as Plan §5.3:
+    - (a) valid and visible;
+    - (b) level in `{L, L−1}`, floor easy;
+    - (c) not in this attempt;
+    - (d) **unit entitled**, mandatory and not configurable;
+    - (e) `similar_scope` REACHED / ALL;
+    - (f) unseen first: two passes, with one indexed "seen" query.
+  - [ ] Stored order: shuffle repeat + similar items with a seed derived from `attemptId`.
+  - [ ] Shortfall recorded in `retry_extras_short`.
+  - [ ] Pure composer (inputs: snapshot, seeds, seen set, entitlement, policy); I/O stays in the service.
+  - **Unit tests:**
+    - [ ] the E table (W = 1 → 2, 2 → 3, 3 → 5, 4+ → 5);
+    - [ ] every filter on its own;
+    - [ ] the paid-unit question is never selected;
+    - [ ] the REACHED scope;
+    - [ ] the unseen-first fallback;
+    - [ ] the shortfall down to repeats only;
+    - [ ] deterministic order for the same attempt id.
+  - **Acceptance:** a property test confirms the composer never returns duplicates or questions already in the
+    attempt.
+
+- [ ] **P4.T7 Phase completion** · Repo: ENG · Dep: P4.T6 · Plan §5.1, §7.3
+  - [ ] `POST /internal/theory/v1/attempts/{id}/phases/lesson/complete`:
+    - `FOR UPDATE`;
+    - all lesson items answered, else 409 `PHASE_INCOMPLETE`;
+    - write the totals;
+    - W > 0 → compose and insert retry items, status `IN_RETRY`;
+    - W = 0 → `COMPLETED` (lesson completion side effects run in P5).
+  - [ ] `POST …/phases/retry/complete`: all retry items answered; totals; `COMPLETED`.
+  - [ ] Natural idempotency: completing an already-completed phase returns the stored summary.
+  - [ ] Response refs for the retry items.
+  - [ ] Leave the `next` + `progress` fields for P5 (null until then, contract shape fixed).
+  - **Tests:**
+    - [ ] W = 0 path;
+    - [ ] W > 0 path;
+    - [ ] incomplete → 409;
+    - [ ] double complete returns the same summary;
+    - [ ] a late answer after completion → 409;
+    - [ ] two devices completing at once are serialised (Testcontainers).
+  - **Acceptance:** a full flow test: start → 8 answers with 2 wrong → lesson complete returns 5 retry items → 5
+    answers → retry complete → `COMPLETED`.
+
+- [ ] **P4.T8 Lesson state endpoint** · Repo: ENG · Dep: P4.T7 · Plan §7.3 (lesson theory), §7.4
+  - [ ] `GET /internal/theory/v1/lessons/{lessonId}` returns
+        `{ status, locked, lockReason, openAttempt, questionCount, estimatedMinutes, lessonVersion }`.
+    - `questionCount` comes from a **dry run** of the selector, with no writes.
+    - `estimatedMinutes`: the authored value, else reading time + media durations + 45 s × questions.
+  - **Tests:**
+    - [ ] locked → 403 with the right code;
+    - [ ] with an open attempt;
+    - [ ] the preview count matches the next start's count.
+  - **Acceptance:** zero writes during the call (query-count assertion).
+
+- [ ] **P4 Phase exit:** the full attempt flow passes in Testcontainers; no answer key appears in any pre-answer
+  response; all concurrency tests pass.
+
+---
+
+## P5. Engine: progress, home, learning path, readiness
+
+- [ ] **P5 — phase done**
+
+- [ ] **P5.T1 Migrations: progress tables** · Repo: ENG · Dep: P4 · Plan §5.7, §6
+  - [ ] `V1_0_19__theory_progress.sql`:
+    - `lesson_progress` (incl. `best_accuracy`, `open_attempt_id`, `updated_at`; PK `(app_user_id, lesson_id)`;
+      partial index on open attempts);
+    - `learner_theory_summary`;
+    - `learner_activity_day`;
+    - `learner_activity_lesson`.
+  - **Acceptance:** migration test green.
+
+- [ ] **P5.T2 Timezone handling** · Repo: ENG · Dep: P5.T1 · Plan §5.7
+  - [ ] Read `X-Timezone` (validate with `ZoneId.of`; ignore invalid values); default `Europe/Stockholm`. Store it on
+        the summary when it changes.
+  - [ ] A `LocalDay` helper: the local date for an `Instant` + zone; the next local midnight as an `Instant` (DST
+        safe).
+  - **Unit tests:** invalid zone ignored; 23:59 / 00:01 boundaries; DST transition days (Europe/Stockholm, both
+    March and October).
+
+- [ ] **P5.T3 ProgressService write path** · Repo: ENG · Dep: P5.T2, P4.T7 · Plan §5.7
+  - [ ] In the lesson-completion transaction (W = 0 lesson complete, or retry complete), steps 1–4 of Plan §5.7:
+    - `lesson_progress` upsert with `GREATEST(best_accuracy)`;
+    - the activity-lesson insert `ON CONFLICT DO NOTHING`, then the day upsert if inserted;
+    - the summary: streak rule, longest streak, `sum_best_accuracy += delta`, `completed_lessons` on the first
+      completion, `progress_version + 1`.
+  - [ ] Attempt start: upsert `lesson_progress` (`open_attempt_id`, `IN_PROGRESS` if not completed) and bump
+        `progress_version`. Fill in the P4.T4 hook.
+  - **Unit tests:**
+    - [ ] streak today / yesterday / gap;
+    - [ ] the same lesson twice in a day counts once;
+    - [ ] two different lessons count twice;
+    - [ ] a retake improves `best_accuracy` and never lowers it;
+    - [ ] a timezone change doesn't double count.
+  - **Acceptance:** a Testcontainers test runs 3 lessons across 2 local days and asserts every summary field.
+
+- [ ] **P5.T4 Home endpoint** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/home`
+  - [ ] `GET /internal/theory/v1/home`, built from:
+    - one summary read;
+    - ≤ 7 activity days;
+    - one `lesson_progress` range scan;
+    - the snapshot;
+    - the entitlement cache;
+    - the user's initials and first name **via the user module's ExternalUseCase** (learn tier 4 → user tier 2).
+  - [ ] `continue.action`:
+    - `CONTINUE` (most recent open attempt);
+    - `START` (next unlocked, not completed);
+    - `UPGRADE` (next lesson in a non-entitled unit);
+    - `null` when everything is done.
+  - [ ] `upNext` (next 1 entry after `continue`); `tabs.mockExams` locked with `NOT_AVAILABLE`; `learningPathEtag`.
+  - [ ] **Partial failure:** if the progress reads fail, `week`, `dailyChallenge`, `streak` and `readiness` are null
+        and the rest renders (log WARN).
+  - [ ] `week.startsOn` from config `theory.progress.week-starts-on` (O-11); `daily_challenge_lessons` config
+        (default 3).
+  - **Tests:**
+    - [ ] each `continue.action`;
+    - [ ] the streak shown as 0 after a gap;
+    - [ ] the challenge reset at local midnight;
+    - [ ] the week statuses;
+    - [ ] partial failure;
+    - [ ] query count ≤ 3 (+ the user lookup).
+  - **Acceptance:** the response matches the Plan §7.3 example shape field for field (a JSON schema test).
+
+- [ ] **P5.T5 Learning path with ETag** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/learning-path`
+  - [ ] `GET /internal/theory/v1/learning-path`:
+    - every unit with `entries` (`kind = lesson`), `displayIndex` from the snapshot order, and per-unit progress;
+    - entry status `completed | current | locked`, with **exactly one** `current`;
+    - `openAttempt` on a retaken completed lesson.
+  - [ ] ETag `"{release_id}.{progress_version}.{entitlement_hash}.{locale}"`: a matching `If-None-Match` → 304 after
+        **one** PK read. Headers `Cache-Control: private, no-cache`.
+  - **Tests:**
+    - [ ] 304 path (query count = 1);
+    - [ ] ETag changes on completion, on start, on an entitlement change, on a new release, and on a locale change;
+    - [ ] exactly one `current`;
+    - [ ] locked unit 2 with `lockReason: SUBSCRIPTION`.
+  - **Acceptance:** a ~150-lesson fixture serialises to ≤ 30 KB.
+
+- [ ] **P5.T6 Readiness endpoint** · Repo: ENG · Dep: P5.T3 · Plan §5.7, §7.3
+  - [ ] `GET /internal/theory/v1/readiness`:
+    - `percent = round(100 × sum_best_accuracy / visible lessons)`;
+    - `completedLessons`, `totalLessons`, `averageBestAccuracy`;
+    - per-unit values with the same formula.
+  - **Tests:** zero progress → 0; full marks → 100; a new lesson published lowers the percent; per-unit sums are
+    consistent.
+
+- [ ] **P5.T7 Completion responses carry `next` and `progress`** · Repo: ENG · Dep: P5.T4, P5.T5 · Plan §7.3
+  - [ ] Fill in the `next` (entry + `action`) and `progress` (streak, `dailyChallenge`, readiness, `learningPathEtag`)
+        fields left in P4.T7, for both completion endpoints.
+  - **Tests:** the values equal what a following `GET home` returns.
+  - **Acceptance:** a full flow ends with the next lesson `current` in the learning path and `START` on home.
+
+- [ ] **P5 Phase exit:** every engine internal endpoint of Plan §7.3 exists, with tests green; the progress values
+  agree between completion responses, home, the learning path and readiness.
+
+---
+
+## P6. BFF: the public API
+
+- [ ] **P6 — phase done**
+
+- [ ] **P6.T1 Settings for the new integrations** · Repo: BFF · Dep: P1 · Plan §7.4, the BFF env file
+  - [ ] Add settings with validation:
+    - `ENGINE_BASE_URL`, `ENGINE_INTERNAL_TOKEN` (`SecretStr`), `ENGINE_READ_TIMEOUT`,
+      `ENGINE_PHASE_COMPLETE_TIMEOUT`, `ENGINE_POOL_MAX_CONNECTIONS`;
+    - `BOOST_BATCH_MAX_REFS`, `CONTENT_PREFETCH_ON_RELEASE`;
+    - `MEDIA_CDN_BASE_URL`, `MEDIA_SIGNING_KEY` (`SecretStr`), `MEDIA_SIGNED_URL_TTL_SECONDS`,
+      `MEDIA_FREE_UNIT_IDS`;
+    - `RATE_LIMIT_READ_PER_MINUTE`, `RATE_LIMIT_WRITE_PER_MINUTE`.
+  - [ ] Update `.env.example` (no secrets); set the Boost timeouts to the plan values (1.5 s read, 1 retry, 3 s
+        budget).
+  - **Unit tests:** the missing-required-value errors; startup refuses a missing engine token outside `local`.
+
+- [ ] **P6.T2 Engine client** · Repo: BFF · Dep: P6.T1, P5 · Plan §7.4
+  - [ ] An async httpx client with a keep-alive pool. Forwards the learner JWT, `X-Fordona-Internal-Token`,
+        `Accept-Language`, `X-Timezone` and the correlation id. Unwraps `Payload<T>`.
+  - [ ] Passes engine RFC 7807 errors through unchanged (status, `errorCode`, `detail`, `correlationId`);
+        `If-None-Match` / `ETag` / 304 pass through.
+  - [ ] Per-call timeouts (2 s; 5 s for phase completion). An engine outage → 503 `UPSTREAM_UNAVAILABLE`.
+  - **Unit tests (respx):**
+    - [ ] header forwarding;
+    - [ ] unwrapping;
+    - [ ] error passthrough;
+    - [ ] 304 passthrough;
+    - [ ] timeout → 503.
+
+- [ ] **P6.T3 Boost §13 client and body cache** · Repo: BFF · Dep: P2.T3 · Plan §7.4, §9.1, §13
+  - [ ] Extend the Boost client:
+    - the lesson revision;
+    - the question batch (chunks of 100, `missing[]`);
+    - models for blocks and the new fields.
+  - [ ] Redis cache keyed `(entity, id, version, locale)` with **no TTL** (immutable). A cache miss for an attempt
+        loads all missing refs in **one batch call**.
+  - [ ] **Never model answer fields** (keep the existing rule): grading is not reachable from the BFF.
+  - **Unit tests:**
+    - [ ] cache hit makes no Boost call;
+    - [ ] a mixed hit/miss makes one batch call;
+    - [ ] `missing[]` → item dropped + logged;
+    - [ ] Boost down + cached → served;
+    - [ ] Boost down + not cached → 503.
+
+- [ ] **P6.T4 Block rendering and media URLs** · Repo: BFF · Dep: P6.T3, P0.T2 (O-10) · Plan §4.6, §9.5
+  - [ ] Map Boost blocks to the public block shapes in Plan §7.3: image `url`/`srcset`, video `hlsUrl`/`posterUrl`/
+        `captions`, audio `hlsUrl`/`transcript`, animation `url`, `rule_card`, `text`.
+  - [ ] Asset id → URL. Signed (HMAC over path + expiry, TTL from config) for units not in `MEDIA_FREE_UNIT_IDS`;
+        plain URLs otherwise. **Signed per response, never cached.** Implement behind an interface so the O-10
+        decision changes only the signer.
+  - [ ] Unknown block types are dropped and logged; an unresolvable asset drops the block, never the response.
+  - **Unit tests:**
+    - [ ] every block type;
+    - [ ] the signature (verifiable with the key);
+    - [ ] expiry;
+    - [ ] free-unit plain URLs;
+    - [ ] cached bodies contain no signed URL.
+
+- [ ] **P6.T5 Public routes** · Repo: BFF · Dep: P6.T2, P6.T4 · Plan §7.3 (endpoint table)
+  - [ ] `GET /v1/home`: engine passthrough (+ icon URLs).
+  - [ ] `GET /v1/learning-path`: passthrough with ETag/304.
+  - [ ] `GET /v1/readiness`.
+  - [ ] `GET /v1/lessons/{lessonId}`:
+    - engine lesson state;
+    - **if locked, return the 403 without fetching theory**;
+    - otherwise the lesson revision blocks from cache/Boost;
+    - compose the response.
+  - [ ] `POST /v1/lessons/{lessonId}/attempts` and `GET /v1/attempts/{attemptId}`: engine refs → hydrated items:
+    - `prompt` blocks;
+    - `options` ordered by `optionOrder` with labels A–D;
+    - **drop `questionId`/`version`**;
+    - `answered` feedback on resume;
+    - `retry` items when `IN_RETRY`.
+  - [ ] `POST /v1/attempts/{attemptId}/responses`: engine feedback + `correctOption.content` from the cached body +
+        explanation blocks with resolved URLs.
+  - [ ] `POST …/phases/lesson/complete` and `…/retry/complete`: hydrate the retry items; pass `next` / `progress`
+        through.
+  - [ ] Request validation: UUID formats for `requestId` / `responseId`; `selectedOptionKey` non-empty;
+        `durationMs ≥ 0`.
+  - **Unit tests (respx engine + Boost):**
+    - [ ] every route's shape matches Plan §7.3 (JSON schema tests);
+    - [ ] no public response ever contains `questionId`, `version`, `correctOptionKey` before an answer, or any
+          template id (a recursive key search in tests);
+    - [ ] a locked lesson makes no Boost call;
+    - [ ] option order and labels.
+  - **Acceptance:** the OpenAPI document at `/openapi.json` lists exactly the 9 public endpoints (+ health).
+
+- [ ] **P6.T6 Rate limiting** · Repo: BFF · Dep: P6.T5 · Plan §7.3
+  - [ ] A per-learner (JWT `sub`) Redis token bucket. Read routes use `RATE_LIMIT_READ_PER_MINUTE`; write routes
+        (starts, responses, completions) use `RATE_LIMIT_WRITE_PER_MINUTE`. Return 429 RFC 7807 with `Retry-After`.
+  - **Unit tests:** limit reached → 429; separate buckets per learner; separate buckets read/write.
+
+- [ ] **P6.T7 Release prefetch (optional, off by default)** · Repo: BFF · Dep: P6.T3 · Plan §9.1
+  - [ ] When `CONTENT_PREFETCH_ON_RELEASE=true`, warm the cache for every current question and lesson revision after
+        an engine release change. Use a background task, with batch calls rate-limited.
+  - **Unit tests:** idempotent; respects batch limits.
+
+- [ ] **P6.T8 Deploy BFF + stub + engine together on staging** · Repo: EXT · Dep: P6.T5, P6.T6
+  - [ ] BFF environment: `ENGINE_BASE_URL` (internal host), `ENGINE_INTERNAL_TOKEN` (same as the engine),
+        `BOOST_BASE_URL` = the stub's internal URL, the `MEDIA_*` values.
+  - [ ] Engine environment: `theory.boost.*` = the stub, the tokens, the internal token, jobs enabled.
+  - **Acceptance:** the Postman journey (P8.T1) runs green against staging.
+
+- [ ] **P6 Phase exit:** all 9 public endpoints work on staging against the stub; the leak tests pass; the OpenAPI
+  is published.
+
+---
+
+## P7. End-to-end quality
+
+- [ ] **P7 — phase done**
+
+- [ ] **P7.T1 Concurrency suite (engine, Testcontainers)** · Repo: ENG · Dep: P5 · Plan §14.2
+  - [ ] double start → 1 attempt;
+  - [ ] double answer → replay or 409;
+  - [ ] double phase-complete → same summary;
+  - [ ] two devices completing at once → serialised;
+  - [ ] the streak counted once per local day under concurrent completions.
+  - **Acceptance:** green 10 runs in a row (no flakiness).
+
+- [ ] **P7.T2 Load test (k6)** · Repo: BFF (scripts) · Dep: P6.T8 · Plan §9.1, §9.3
+  - [ ] Scenario: a mix of home, learning-path (with ETag), theory, starts, answers and completions; target 670
+        answers/s on staging-sized infrastructure (or scaled proportionally, documented).
+  - [ ] Record the p99 per endpoint at the BFF, error rate, Postgres CPU and connections, Redis hit rate.
+  - **Acceptance:** p99 within the Plan §9.1 targets, or a deviation logged with its cause and fix in
+    `PROGRESS__STATUS.md`.
+
+- [ ] **P7.T3 Observability** · Repo: ENG + BFF · Dep: P6.T8
+  - [ ] OpenTelemetry trace propagation BFF → engine (one trace per request).
+  - [ ] Metrics:
+    - p99 per endpoint;
+    - Boost cache-hit rate;
+    - sync lag (feed cursor age);
+    - snapshot release id per instance;
+    - `retry_extras_short` rate;
+    - error rate by `errorCode`.
+  - [ ] SigNoz dashboard + alerts: sync lag > 5 min, 5xx rate > 1 %, p99 above 2× target.
+  - **Acceptance:** a test request is visible as one trace across both services.
+
+- [ ] **P7.T4 Runbook** · Repo: BFF `docs/` · Dep: P7.T3
+  - [ ] Covers:
+    - content sync and full resync;
+    - stub → Boost swap (Plan §4.5);
+    - resetting a test learner (SQL scoped to one `app_user_id`);
+    - rotating the internal token and the media signing key;
+    - reading the content report.
+  - **Acceptance:** a second person can do a full resync using only the runbook.
+
+- [ ] **P7 Phase exit:** the concurrency, load and observability checks pass; the runbook is reviewed.
+
+---
+
+## P8. Hand-off to the mobile developer
+
+- [ ] **P8 — phase done**
+
+- [ ] **P8.T1 Postman collection** · Repo: BFF `docs/` · Dep: P6.T8
+  - [ ] Environment: the staging base URL; Kinde OAuth 2.0 (Authorization Code + PKCE, Fordona audience, callback
+        `https://oauth.pstmn.io/v1/callback`).
+  - [ ] The journey: home → learning path (twice, the second → 304) → theory → start → answers (incl. deliberately
+        wrong) → lesson complete → retry answers → retry complete → home.
+  - [ ] Scripts:
+    - pre-request scripts generate `requestId` / `responseId`;
+    - test scripts store `attemptId` and assert status codes and key fields.
+  - **Acceptance:** the collection runner passes end to end on staging.
+
+- [ ] **P8.T2 Test accounts and QA answer sheet** · Repo: EXT/BFF · Dep: P6.T8
+  - [ ] One free learner (Unit 1 only) and one entitled learner in Kinde + the engine.
+  - [ ] A **staging-only** QA sheet of the correct options for the stub's templates, generated from the stub data.
+        Never generated from production.
+
+- [ ] **P8.T3 Hand-off pack** · Repo: BFF `docs/` · Dep: P8.T1, P8.T2 · Plan §14.3
+  - [ ] Contents:
+    - the OpenAPI link;
+    - the Postman collection;
+    - the error-code table;
+    - the Kinde settings + auth guide;
+    - the test accounts;
+    - the **client rules checklist** copied from Plan §14.3.
+  - **Acceptance:** the mobile developer confirms they can run the journey from the pack alone.
+
+- [ ] **P8 Phase exit:** the hand-off has been delivered and acknowledged.
+
+---
+
+## P9. Production readiness (external blockers)
+
+- [ ] **P9 — phase done**
+
+- [ ] **P9.T1 Boost implements §13** · Repo: EXT (Boost owner) · Dep: P0.T3
+  - [ ] The P2.T1 contract suite is green against **Boost staging**.
+
+- [ ] **P9.T2 Eric's content in Boost** · Repo: EXT · Dep: P9.T1
+  - [ ] Templates authored and published for the launch units, meeting the equal-difficulty guideline (R-7).
+  - [ ] The engine content report on Boost staging shows no hidden lessons in the launch scope.
+
+- [ ] **P9.T3 Media pipeline live (O-10)** · Repo: EXT · Dep: P0.T2
+  - [ ] Processing (variants, GIF → loop, HLS), captions and transcripts enforced, the CDN with signed URLs; the BFF
+        signer matches it.
+
+- [ ] **P9.T4 Staging swap from stub to Boost** · Repo: EXT · Dep: P9.T1, P9.T2 · Plan §4.5
+  - [ ] Point `BOOST_BASE_URL` (BFF) and `theory.boost.base-url` (engine) at Boost; run
+        `content-sync?full=true`; reset staging learner data.
+  - [ ] Re-run the Postman journey and the load test.
+
+- [ ] **P9.T5 Production deploy** · Repo: EXT · Dep: P9.T4, P8
+  - [ ] Production configuration:
+    - `APP_ENV=prod`;
+    - `DOCS_ENABLED=false`;
+    - Boost URLs pointing at Boost (never the stub);
+    - no stub app in production;
+    - the prod guard verified.
+  - [ ] The old catalogue routes are confirmed absent (R-11).
+  - [ ] Smoke test with a production test account; dashboards and alerts active.
+
+- [ ] **P9 Phase exit:** production is live; the mobile app release can go out.
