@@ -566,30 +566,37 @@ every repository the plan touches:
     - [x] another learner's attempt → 404.
   - **Acceptance:** no response body contains `correct_option_key` before an answer (assert by JSON search).
 
-- [ ] **P4.T5 Answer endpoint and grading** · Repo: ENG · Dep: P4.T4 · Plan §5.4, §5.5, §6
-  - [ ] `POST /internal/theory/v1/attempts/{attemptId}/responses`:
+- [x] **P4.T5 Answer endpoint and grading** · Repo: ENG · Dep: P4.T4 · Plan §5.4, §5.5, §6
+  - [x] `POST /internal/theory/v1/attempts/{attemptId}/responses`:
     - `SELECT … FOR SHARE` on the attempt;
     - validate the phase and the option key;
-    - grade from the snapshot;
+    - grade from the snapshot; — graded from `PinnedRevisionLoader`'s cached pinned revision, not the
+      live snapshot: an item is pinned to the revision current when its attempt started, which can
+      lag the snapshot's current one after a republish. The snapshot is still used for the mistake
+      ledger's `home_lesson_id` (in-memory, no extra DB read).
     - conditional `UPDATE attempt_item … WHERE answered_at IS NULL`;
     - store the tag snapshot fields (set at item creation) plus the answer fields;
-    - upsert the ledger (OPEN; RESOLVED with `resolved_via` `REPEAT` / `RETAKE` / `LATER`).
-  - [ ] Idempotency:
+    - upsert the ledger (OPEN; RESOLVED with `resolved_via` `REPEAT` / `RETAKE` / `LATER`). —
+      `REPEAT` is not yet reachable: it only applies to retry-phase items, which don't exist until
+      P4.T6. Every item answered today is `phase=LESSON`, so `resolved_via` only ever computes
+      `RETAKE` (resolved within the mistake's own home lesson) or `LATER` (resolved elsewhere).
+  - [x] Idempotency:
     - the same `responseId` + same option → replay (200, same feedback);
     - a different option or a reused `responseId` → 409 `THEORY_RESPONSE_CONFLICT`.
-  - [ ] Feedback: `isCorrect`, `selectedOptionKey`, `correctOptionKey`, `correctOptionLabel` (from `option_order`),
+  - [x] Feedback: `isCorrect`, `selectedOptionKey`, `correctOptionKey`, `correctOptionLabel` (from `option_order`),
         `explanation` blocks for the request locale (fall back to `sv-SE`).
   - **Tests:**
-    - [ ] correct / incorrect;
-    - [ ] 422 invalid option;
-    - [ ] 404 unknown seq;
-    - [ ] 409 `PHASE_CLOSED`;
-    - [ ] a replay;
-    - [ ] 409 conflict;
-    - [ ] the ledger transitions (OPEN → RESOLVED → OPEN on a retake);
-    - [ ] two concurrent answers to the same item: exactly one wins.
+    - [x] correct / incorrect;
+    - [x] 422 invalid option;
+    - [x] 404 unknown seq;
+    - [x] 409 `PHASE_CLOSED`;
+    - [x] a replay;
+    - [x] 409 conflict;
+    - [x] the ledger transitions (OPEN → RESOLVED → OPEN on a retake);
+    - [x] two concurrent answers to the same item: exactly one wins.
   - **Acceptance:** the grading path makes zero database reads of content (verified by a query-count assertion or a
-    repository spy).
+    repository spy). — verified by a `@MockitoSpyBean` on `TheoryContentStore`: after priming
+    `PinnedRevisionLoader`'s cache once, a full `answer()` call makes no further `findRevision` call.
 
 - [ ] **P4.T6 Retry composer** · Repo: ENG · Dep: P4.T5, P3.T7 · Plan §5.3
   - [ ] `E = clamp(ceil(extras_per_wrong × W), extras_min, extras_max)`. W = 0 → no retry phase.

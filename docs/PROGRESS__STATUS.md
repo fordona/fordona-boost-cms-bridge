@@ -1373,3 +1373,75 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Issues found / open risks:** none new.
 - **Ready to continue:** YES.
 - **Next task:** P4.T5 (answer endpoint and grading) — depends only on P4.T4, which is now done.
+
+### 2026-11-03 · P4.T5 · Answer endpoint and grading
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 42713700
+- **What was done:**
+  - `AttemptService.answer(userId, attemptId, seq, selectedOptionKey, responseId, durationMs,
+    acceptLanguageHeader)`: `findByIdForShare` (new repository method, `SELECT ... FOR SHARE`) +
+    ownership filter → `THEORY_ATTEMPT_NOT_FOUND` if missing or another learner's; attempt already
+    `COMPLETED` → `THEORY_PHASE_CLOSED`; unknown `seq` → `THEORY_ITEM_NOT_FOUND`; the item's own
+    `phase` must match the attempt's current phase (`IN_LESSON` → `LESSON`, `IN_RETRY` → `RETRY`) or
+    `THEORY_PHASE_CLOSED`; the option must be one of the pinned revision's `option_keys` or
+    `THEORY_OPTION_INVALID` (422).
+  - **Graded from `PinnedRevisionLoader`, not the live `ContentSnapshot`.** The tracker's own wording
+    ("grade from the snapshot") doesn't hold up once you ask what happens if Boost republishes the
+    question between an attempt starting and the learner answering: the snapshot only ever holds the
+    *current* revision, but the item is pinned to whatever revision was current when it was created.
+    Grading against the snapshot would silently re-grade a still-open item against content it was
+    never shown. `PinnedRevisionLoader` (P3.T6) exists for exactly this and is already keyed by
+    `(questionId, version)` with an unbounded, never-expiring cache — reusing it rather than the
+    snapshot was the one real correction to the tracker's literal wording this task needed. The
+    snapshot is still read once, in-memory only, for the mistake ledger's `home_lesson_id`.
+  - The conditional `UPDATE ... WHERE answered_at IS NULL` is exactly Plan §6's "one statement is the
+    idempotency check, the already-answered-differently check and the write": `affected == 1` → graded
+    and the ledger runs; `affected == 0` → re-fetch the item and compare `(responseId,
+    selectedOptionKey)` against what's stored — identical → replay (200, same feedback); anything
+    else → `THEORY_RESPONSE_CONFLICT` (409). A `responseId` already attached to a *different* item
+    throws `DataIntegrityViolationException` on the `UPDATE` itself (globally `UNIQUE(response_id)`),
+    caught and translated to the same 409 — no separate code path needed for that case.
+  - `correctOptionLabel` is computed from the learner's own pinned `option_order`
+    (`indexOf(correctOptionKey)` → `'A' + index`), never a fixed letter — so "the right answer is C"
+    is always true against what that specific learner actually saw.
+  - `TheoryLocaleResolver` (pure): resolves the feedback's explanation locale from `Accept-Language`
+    against `theory.content.supported-locales`, falling back to `sv-SE`. Deliberately separate from
+    `LocaleContextHolder`/`LanguageContext` (the generic i18n bundle locale, keyed by
+    `app_language.id`) — a different concern, resolving which Boost-authored translation to serve,
+    not which bundle to translate an error message from.
+  - **Mistake ledger placement, a real decision, not an oversight:** `mistake`'s only FK points at
+    `content_question`, which would suggest folding its queries into `ContentQuestionRepository`
+    (the convention `question_neighbour`/`content_question_revision` already follow). Placed in
+    `LessonAttemptRepository` instead — `mistake` is learner progress/answer state, the same bounded
+    context as attempts and items, not theory-content-sync state, and `TheoryContentStore` has no
+    business holding per-learner rows. Logged so a future reader doesn't "fix" this to match the FK.
+  - `resolved_via` can only ever be `RETAKE` or `LATER` right now: it compares the resolving attempt's
+    `lesson_id` against the mistake's `home_lesson_id`. `REPEAT` ("in the retry phase, straight after
+    being shown the answer" per Plan §5.5) requires a retry-phase item to exist at all, which is
+    P4.T6's job — every item answered today is `phase=LESSON`.
+- **Tests:**
+  - `AttemptServiceTest` (+11 tests, real Postgres, real `PinnedRevisionLoader`/content tables for the
+    FK reasons already logged under P4.T4): correct and incorrect grading; 422 invalid option; 404
+    unknown seq; 409 phase-closed on a completed attempt; a replay returns identical feedback; same
+    item answered twice with a different option → 409; the same `responseId` reused on a different
+    item → 409 (via the `DataIntegrityViolationException` path); the full ledger cycle
+    OPEN → RESOLVED (`RETAKE`) → OPEN across three real attempts on the same lesson; two real threads
+    racing to answer the same item with different options/`responseId`s — exactly one succeeds, the
+    other gets `THEORY_RESPONSE_CONFLICT`, never an unhandled error; and the acceptance check itself —
+    priming `PinnedRevisionLoader` once, then asserting a full `answer()` call makes zero further
+    `TheoryContentStore#findRevision` calls (`@MockitoSpyBean`, same convention as
+    `PinnedRevisionLoaderTest`).
+  - `TheoryAttemptInternalControllerTest` (+3 tests): missing internal token on the new endpoint →
+    403; a valid answer returns 200 with the real `correctOptionKey`/`correctOptionLabel` (legitimate
+    here — this endpoint's whole job is returning them post-answer) while the raw body never contains
+    the *field name* `correct_option_key` (snake_case) anywhere, guarding against a stray serialization
+    config change rather than re-proving the pre-answer case P4.T4 already covers; 422 on an invalid
+    option.
+  - Full suite: `./gradlew test` → **1570 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** grading from `PinnedRevisionLoader` instead of the live snapshot
+  (above, a correctness fix the tracker's wording glossed over); `mistake`'s repository placement
+  (above, a judgment call on bounded-context ownership over FK structure).
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P4.T6 (retry composer) — depends on P4.T5 (done) and P3.T7 (done).
