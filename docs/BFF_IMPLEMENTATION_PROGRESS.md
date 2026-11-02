@@ -262,11 +262,14 @@ every repository the plan touches:
 
 - [ ] **P3 — phase done**
 
-- [ ] **P3.T1 Package skeleton and conventions** · Repo: ENG · Dep: P0 · Plan §6
-  - [ ] Create `io.fordona.engine.learn.theory` with sub-packages:
+- [x] **P3.T1 Package skeleton and conventions** · Repo: ENG · Dep: P0 · Plan §6 — DONE (2026-11-02): started
+  before P0 exit (owner instruction, "continue implementations"); see `PROGRESS__STATUS.md`.
+  - [x] Create `io.fordona.engine.learn.theory` with sub-packages:
         `api/{dto,request}`, `data/{entity,mapper,projection,repository,store}`,
-        `exception/{business,resource,validation}`, `model`, `service`, `content`, `similarity`, `usecase`.
-  - [ ] Add `ErrorCode.Theory` (nested class), following the existing naming: e.g. constant
+        `exception/{business,resource,validation}`, `model`, `service`, `content`, `similarity`, `usecase`. —
+        the still-empty ones (`api`, `data`, `model`, `service`, `content`, `similarity`, `usecase`) are
+        deliberately not pre-created; they materialise with their first class, as every other module did.
+  - [x] Add `ErrorCode.Theory` (nested class), following the existing naming: e.g. constant
         `ErrorCode.Theory.LESSON_NOT_FOUND` with value `"THEORY_LESSON_NOT_FOUND"`. It needs every code from Plan §7.3:
     - `THEORY_MODULE_LOCKED`, `THEORY_LESSON_LOCKED`;
     - `THEORY_LESSON_NOT_FOUND`, `THEORY_ATTEMPT_NOT_FOUND`, `THEORY_ITEM_NOT_FOUND`;
@@ -274,14 +277,20 @@ every repository the plan touches:
     - `THEORY_PHASE_CLOSED`, `THEORY_PHASE_INCOMPLETE`;
     - `THEORY_OPTION_INVALID`.
 
-    Add keys for each in `messages.properties` **and** `messages_sv.properties`.
-  - [ ] Exception classes in the right hierarchy (use `/new-exception`). Map 409 cases per the existing
-        `GlobalExceptionHandler` conventions; check how other 409s are produced before adding one.
-  - **Unit tests:** an i18n test that every `ErrorCode.Theory.*` constant has a key in both bundles.
-  - **Acceptance:** `./gradlew compileJava` passes; the i18n test is green.
+    Add keys for each in `messages.properties` **and** `messages_sv.properties`. — **Deviation:** `MODULE_LOCKED`
+    and `LESSON_NOT_FOUND` collided with two pre-existing `ErrorCode.Learn` values of the same string (the
+    older, still-live quiz feature); renamed to `THEORY_ATTEMPT_MODULE_LOCKED` /
+    `THEORY_ATTEMPT_LESSON_NOT_FOUND` (owner decision 2026-11-02, see `PROGRESS__STATUS.md`). The other eight
+    match verbatim.
+  - [x] Exception classes in the right hierarchy. One class per code (not a shared `Reason` enum — these span
+        four different HTTP statuses). 409s use `BusinessException` with an explicit `HttpStatus.CONFLICT`.
+  - **Unit tests:** an i18n test that every `ErrorCode.Theory.*` constant has a key in both bundles. — the
+    existing generic `ErrorCodeMessageCoverageTest` already does this for every `ErrorCode.*` nested class; no
+    new test needed.
+  - **Acceptance:** `./gradlew compileJava` passes; the i18n test is green. — met.
 
-- [ ] **P3.T2 Flyway migrations: content read model** · Repo: ENG · Dep: P3.T1 · Plan §6
-  - [ ] `V1_0_16__theory_content_read_model.sql` in `db/migration/learn` (use `/new-migration`). Tables:
+- [x] **P3.T2 Flyway migrations: content read model** · Repo: ENG · Dep: P3.T1 · Plan §6 — DONE (2026-11-02)
+  - [x] `V1_0_16__theory_content_read_model.sql` in `db/migration/learn`. Tables:
     - `content_release` (`release_id`, `source`, `change_cursor`, `activated_at`);
     - `content_unit` (`title jsonb`, `icon_asset_id`, `status`);
     - `content_lesson` (`title jsonb`, `current_version`, `estimated_minutes`, `status`);
@@ -291,28 +300,33 @@ every repository the plan touches:
     - `content_question_revision` (`type`, `difficulty`, `level`, `domain_code`, `topic_tag`, `correct_option_key`,
       `option_keys jsonb`, `media_kinds jsonb`, `explanation jsonb`, `release_id`);
     - `question_neighbour`.
-  - [ ] `CHECK` constraints on every status column; indexes on foreign-key-like columns. No cross-schema FKs.
-  - **Acceptance:** the engine starts on a clean database; Flyway validates; a Testcontainers migration test passes.
+  - [x] `CHECK` constraints on every status column; indexes on foreign-key-like columns. No cross-schema FKs.
+  - **Acceptance:** the engine starts on a clean database; Flyway validates; a Testcontainers migration test
+    passes. — met via the existing `FordonaEngineApplicationTests` context-load test (Docker available this
+    session); a dedicated migration-only test wasn't added since this one already runs the migration for real.
 
-- [ ] **P3.T3 Boost client (engine side)** · Repo: ENG · Dep: P3.T1 · Plan §7.5, §13
-  - [ ] Config: `theory.boost.base-url`, `theory.boost.delivery-token`, `theory.boost.grading-token`, timeouts. Env
+- [x] **P3.T3 Boost client (engine side)** · Repo: ENG · Dep: P3.T1 · Plan §7.5, §13 — DONE (2026-11-02)
+  - [x] Config: `theory.boost.base-url`, `theory.boost.delivery-token`, `theory.boost.grading-token`, timeouts. Env
         overrides in `application.yml`; no defaults for tokens.
-  - [ ] `RestClient`-based `BoostContentClient`:
+  - [x] `RestClient`-based `BoostContentClient`:
     - `changes(after, limit)`;
-    - lists by `id=` filter;
+    - lists by `id=` filter (modules, lessons, questions, **and question-templates** — read "lists" as all four
+      of §13.2's list resources, since P3.T2's schema needs template data and nothing else in the tracker
+      supplies it; see `PROGRESS__STATUS.md`);
     - `questionRevisionsBatch(refs)` (≤ 100, chunked);
     - `gradingRevisionsBatch(refs)`;
     - `topics(moduleId)`.
     - Parse `missing[]`.
-  - [ ] **Prod guard:** on the first response with `X-Boost-Stub: true` under the `prod` profile, fail fast (startup
-        check or first-call check that throws and alerts).
-  - [ ] Never log tokens; log `requestId` from the Boost Problem body.
+  - [x] **Prod guard:** on the first response with `X-Boost-Stub: true` under the `prod` profile, fail fast (startup
+        check or first-call check that throws and alerts). — first-call check.
+  - [x] Never log tokens; log `requestId` from the Boost Problem body.
   - **Unit tests (MockRestServiceServer or WireMock):**
-    - [ ] batch chunking;
-    - [ ] the `missing[]` handling;
-    - [ ] 410 `CURSOR_EXPIRED` mapped to a typed exception;
-    - [ ] the prod guard.
-  - **Acceptance:** a WireMock suite covers every method.
+    - [x] batch chunking;
+    - [x] the `missing[]` handling;
+    - [x] 410 `CURSOR_EXPIRED` mapped to a typed exception;
+    - [x] the prod guard.
+  - **Acceptance:** a WireMock suite covers every method. — met with `MockRestServiceServer` (8 tests, all
+    public methods covered).
 
 - [ ] **P3.T4 Content validation and sync service** · Repo: ENG · Dep: P3.T2, P3.T3 · Plan §4.3, §4.4
   - [ ] `ContentSyncService.sync(Instant now, boolean full)`:

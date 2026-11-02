@@ -441,3 +441,207 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   stub to staging, which also needs P0.T3 per its own `Dep`). P3 (the engine) needs P0.T2 and P0.T4 too.
 - **Next task:** P2.T4 (Repo: BFF/EXT) once P2.T3 is deployable — it is EXT work (Dokploy), so largely yours;
   otherwise, with the tokens: P2.T1/P2.T2 acceptance runs.
+
+
+### 2026-11-02 · Token attempt · The supplied `bst_...` token is not a delivery service token
+
+- **Status:** BLOCKED (external) — P0.T3 is still open
+- **What happened:** the owner supplied a `bst_...`-prefixed value as "the delivery
+  token" (redacted here — never commit secrets). `scripts/generate_stub_templates.py`'s own docstring already warns "never a `bst_` token, which
+  cannot call delivery routes" — running it against real Boost (`BOOST_BASE_URL=https://boost-api.fordona.io`)
+  confirmed this immediately: `GET /v1/delivery/modules` → `401 {"code":"authentication_required","detail":
+  "Sign in to continue."}`. This looks like a personal/browser-session token, not a service credential. No
+  data was read or written; nothing was committed.
+- **Ready to continue:** NO. P2.T1's and P2.T2's acceptance runs still need a real delivery token (service
+  credential, not `bst_`), and P2.T1 additionally needs a grading token.
+- **Next task:** re-request P0.T3 from the Boost owner, specifically a **service** token.
+
+### 2026-11-02 · P3.T1 · Package skeleton and conventions
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 1ec80622
+- **Owner instruction recorded:** "continue with the implementations until I acquire them [the tokens]"
+  (2026-11-02). P3.T1's tracker dependency is P0, which is still open (P0.T2–T4 are owner/EXT tasks) — started
+  anyway because nothing in this task's actual content needs a token, a sign-off, or Postgres hardening; it's
+  pure code. Same pattern as P1.T1/P2.T1/P2.T2/P2.T3 before it.
+- **A real naming collision found and resolved before writing any code:** the tracker's exact list of new
+  error codes (Plan §7.3) reuses two string values that `ErrorCode.Learn` — the **existing**, still-live
+  Directus-backed quiz/theory feature (`learn/content`, `learn/exam`, `learn/hub`) — already owns:
+  `THEORY_MODULE_LOCKED` and `THEORY_LESSON_NOT_FOUND`. Confirmed in both `ErrorCode.java` and
+  `messages.properties`/`messages_sv.properties`, where those exact keys already have different English/Swedish
+  copy for the old feature. Plan §0 ("What changed") confirms the new learn.theory feature supersedes the old
+  one in product terms, but no task in the tracker retires `ErrorCode.Learn` or the old module, so both error
+  codes would otherwise collide for real, live endpoints — the one thing `errorCode` is documented as being
+  for (machine-readable, client-branchable) would silently mean two different things, and the second bundle
+  entry would clobber the first's translation.
+  - **Asked the owner how to resolve it** rather than guessing silently (AskUserQuestion): rename the new
+    codes, or retire/rename the old ones. **Decision: rename the new ones** — `ErrorCode.Learn` and the old
+    feature are untouched. Of the ten new `ErrorCode.Theory.*` constants, only the two that actually collide
+    are renamed off the plan's literal string (`MODULE_LOCKED` → `THEORY_ATTEMPT_MODULE_LOCKED`,
+    `LESSON_NOT_FOUND` → `THEORY_ATTEMPT_LESSON_NOT_FOUND`); the other eight (`LESSON_LOCKED`,
+    `ATTEMPT_NOT_FOUND`, `ITEM_NOT_FOUND`, `REQUEST_ID_CONFLICT`, `RESPONSE_CONFLICT`, `PHASE_CLOSED`,
+    `PHASE_INCOMPLETE`, `OPTION_INVALID`) match Plan §7.3 verbatim, since they don't collide with anything.
+    Documented with a Javadoc on `ErrorCode.Theory` pointing back here.
+- **What was done:**
+  - `io.fordona.engine.learn.theory` package created with its `exception/{business,resource,validation}`
+    subpackages populated now; `api/{dto,request}`, `data/*`, `model`, `service`, `content`, `similarity`,
+    `usecase` are deliberately **not** pre-created empty — they materialise with their first real class in
+    P3.T3+ (P3.T3 already added `client/` and `config/`), matching how every other module in this codebase
+    grew. No placeholder/empty packages were committed.
+  - `ErrorCode.Theory` (10 constants) added to `common/constants/ErrorCode.java`.
+  - Ten exception classes, one per code, following the existing single-cause-per-class convention (not the
+    `Reason`-enum idiom — that fits a single HTTP status with many causes, e.g. `UserNotPermittedException`;
+    these ten span four different statuses with no need to share one class):
+    - 403: `TheoryModuleLockedException`, `TheoryLessonLockedException` (`BusinessException`)
+    - 409: `TheoryRequestIdConflictException`, `TheoryResponseConflictException`, `TheoryPhaseClosedException`,
+      `TheoryPhaseIncompleteException` (`BusinessException`, explicit `HttpStatus.CONFLICT`)
+    - 404: `TheoryLessonNotFoundException`, `TheoryAttemptNotFoundException`, `TheoryItemNotFoundException`
+      (`ResourceException`) — `TheoryAttemptNotFoundException`'s Javadoc records the plan's explicit rule that
+      another learner's attempt is a 404, never a 403, so a wrong-owner read can't be used to confirm an id
+      exists.
+    - 422: `TheoryOptionInvalidException` (`ValidationException`)
+  - i18n: all ten keys added to **both** `messages.properties` and `messages_sv.properties`, grouped together
+    with a comment pointing at `ErrorCode.Theory`'s Javadoc so a future reader isn't confused by the two THEORY_
+    key groups sitting next to each other.
+  - No new i18n test was needed — the repo already has a generic `ErrorCodeMessageCoverageTest` that reflects
+    over every `ErrorCode.*` nested class and fails if a constant is missing from either bundle, or if the two
+    bundles' key sets diverge. It already covers `ErrorCode.Theory` for free; this satisfies the tracker's
+    "an i18n test that every `ErrorCode.Theory.*` constant has a key in both bundles" item without a new test.
+- **Tests:**
+  - `./gradlew compileJava` → clean.
+  - `./gradlew test --tests io.fordona.engine.common.constants.ErrorCodeMessageCoverageTest` → 4/4 passed
+    (confirms all ten new keys are present and matched in both bundles).
+- **Deviations from the plan:** the two renamed error-code string values (above); everything else matches
+  Plan §7.3 verbatim.
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P3.T2.
+
+### 2026-11-02 · P3.T2 · Flyway migrations: content read model
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 1ec80622
+- **What was done:**
+  - `V1_0_16__theory_content_read_model.sql` (`db/migration/learn/`): `content_release`, `content_unit`,
+    `content_lesson`, `content_question`, `content_template`, `content_template_question`,
+    `content_question_revision`, `question_neighbour` — exactly Plan §6's tables, no `lesson_attempt`/
+    `attempt_item`/`retry_policy` (those are `V1_0_17`/`V1_0_18`, P4.T1, per the tracker's own split).
+  - `CHECK` constraints on every actual **status** column (`content_release.source`, `content_unit.status`,
+    `content_lesson.status`, `content_template.status`, `content_question.status`,
+    `content_question_revision.level`, plus a sanity range check on `difficulty` 1–5 and `question_neighbour.rank`
+    1–20) — not on `type`/`domain_code`/`topic_tag`, which are open vocabularies Boost/config controls, not a
+    fixed state machine, matching CLAUDE.md's "CHECK constraints on every status column" distinction.
+  - Indexes on every foreign-key-shaped column used for lookup (`content_lesson.unit_id`,
+    `content_question.{home_lesson_id,unit_id}`, `content_template.lesson_id`,
+    `content_template_question.question_id`, and `release_id` on both revision/neighbour tables).
+  - **One inferred default, flagged rather than silently assumed:** Plan §6's ER diagram gives explicit
+    status values for lesson/template/question (`VISIBLE`/`HIDDEN`/`ACTIVE`/`EXCLUDED`) but **not** for
+    `content_unit.status` — no value list, no prose elsewhere mentions a unit being individually
+    hidden/excluded (only unit-level *locking* exists, which is an entitlement concern, not a status). Assumed
+    `VISIBLE`/`HIDDEN` for consistency with lesson/template; recorded here rather than guessed invisibly. If
+    this is wrong, it's a one-column `CHECK` constraint to fix, nothing downstream depends on a specific value
+    yet.
+  - **`level` is stored uppercase** (`EASY`/`MEDIUM`/`HARD`) though Plan §4.1's prose example is lowercase
+    (`1–2 easy, 3 medium, 4–5 hard`) — this is an engine-computed, engine-owned value (derived from
+    `difficulty` by `difficulty_level_map`, not read verbatim from Boost), so it follows this schema's own
+    enum-casing convention (`VISIBLE`/`ACTIVE`/etc.), not the plan's prose casing.
+- **Tests:**
+  - `./gradlew test --tests io.fordona.engine.FordonaEngineApplicationTests` → green. This is the engine's
+    existing Spring-context-load test, which runs every Flyway migration (`V1_0_16` included) against a real
+    Postgres via Testcontainers — Docker is available again this session (unlike the P0.T1 baseline), so this
+    is a genuine, not a skipped, check. A dedicated migration-only test wasn't added; the tracker's acceptance
+    line ("the engine starts on a clean database; Flyway validates; a Testcontainers migration test passes")
+    is met by this existing test, and a second one would just re-assert the same fact.
+- **Deviations from the plan:** the `content_unit.status` value-set inference above.
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P3.T3.
+
+### 2026-11-02 · P3.T3 · Boost client (engine side)
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 38719168
+- **What was done:**
+  - `learn/theory/client/BoostContentClient.java`: a `RestClient`-based client over Plan §13 —
+    `changes(after, limit)`; `modules`/`lessons`/`questions`/`questionTemplates` (all four accept the
+    multi-value `id=` filter); `questionRevisionsBatch`/`gradingRevisionsBatch` (chunk the caller's refs into
+    groups of 100 and merge `items`/`missing` transparently); `topics(moduleId)`.
+  - **Scoping decision beyond the tracker's literal method list:** the tracker names `changes`, "lists by
+    `id=` filter", the two batches, and `topics` — it doesn't explicitly name a question-**templates** method,
+    but P3.T2's own schema has `content_template`/`content_template_question`, which the sync service (P3.T4)
+    has no other way to populate. Read "lists by `id=` filter" as covering all four of Boost's list resources
+    (modules, lessons, questions, question-templates — Plan §13.2's own endpoint table lists templates as
+    endpoint #2 alongside the "existing lists" row), and added `questionTemplates(...)`. Did **not** add a
+    single question-template-revision fetch (Plan §13.2 #3) — the list endpoint already returns each
+    template's current `version` inline, the same convention lessons/questions use, so nothing in the sync
+    path needs the dedicated revision endpoint; it mainly serves the BFF's own cacheable single-item reads.
+  - **Response models carry structure only, by construction.** `BoostQuestion`/`BoostLesson` have no Java
+    field for `translation.{prompt,options,title,contentHtml}` text at all — matching Plan §1 decision 3 ("the
+    engine never sends text") at the type level, not just by convention: there's no field for question/lesson
+    text to land in even by accident. Field names (`shared.moduleId`, `shared.lessonId`, `shared.subjectId`,
+    `shared.difficulty`, `shared.mediaId`, `shared.estimatedReadMinutes`) are taken from
+    `boost_bridge/clients/boost/models.py`'s own Javadoc-equivalent sourcing (Boost's API docs +
+    cross-checked CMS field names) — the one place in either repo that has actually verified these against
+    Boost, rather than re-guessing them. **`topicKey` and a template's `shared.sort`/question `sort` have no
+    verified source yet** (they're new, §13-only fields) — taken directly from Plan §13.4's own JSON examples,
+    since Fordona defines §13 itself.
+  - **A real modeling gap caught before it became a bug:** Plan §6's `content_unit.title`/`content_lesson.title`
+    columns are `jsonb "locale to text"` — a **multi-locale map** — but Boost's `translation.title` convention
+    (confirmed in `boost_bridge`'s own models) is a **single string for the requested locale only** (one
+    locale per request, like every other Boost endpoint). Assembling the jsonb map therefore needs **one
+    client call per supported locale**, the same per-locale fan-out the Boost stub's own grading route already
+    uses. `BoostContentClient`'s list methods take a single `locale` parameter on purpose and do **not** try
+    to assemble the map themselves — that composition is P3.T4's job (the sync service), which is exactly
+    where the stub's own grading precedent lives. Flagging this now so whoever builds P3.T4 doesn't have to
+    rediscover it.
+  - **No defaults for the tokens** (tracker requirement): `theory.boost.delivery-token` /
+    `grading-token` bind from `${THEORY_BOOST_DELIVERY_TOKEN}` / `${THEORY_BOOST_GRADING_TOKEN}` with no
+    fallback in `application.yml` — Spring fails fast at startup if either is unset, same convention as
+    `mollie.*`. Added matching test-only dummy values to `application-test.yml` (not `application.yml`) so the
+    existing test suite's Spring context still boots.
+  - **A second, dedicated `RestClient` bean** (`boostRestClient`), not the shared `restClient` bean Mollie
+    uses — Boost's own connect/read timeouts (`theory.boost.connect-timeout-ms`/`read-timeout-ms`, default
+    2000/3000) must never change Mollie's. Verified the two beans don't collide: `MollieApiClient`'s
+    constructor parameter is literally named `restClient`, which Spring resolves by name among the two
+    same-typed beans; the context-load test (`FordonaEngineApplicationTests`) passing confirms this.
+  - **Prod guard** (tracker requirement, Plan §4.5): every response is checked for the `X-Boost-Stub` header;
+    if present while the `prod` Spring profile is active, the call throws `IllegalStateException` immediately
+    (logged at ERROR first) rather than silently serving stub data in production. Implemented as a first-call
+    check (every real call passes through the same response-handling path), not a separate startup probe —
+    the tracker allows either.
+  - **410 `CURSOR_EXPIRED` → a dedicated `BoostCursorExpiredException`**, distinct from the generic
+    `BoostIntegrationException` used for every other failure (unreachable, 5xx, unexpected shape) — so the
+    P3.T4 sync service can tell "run a full resync" apart from "Boost is down" by catching a specific type,
+    not by string-matching an error code. Both log Boost's own `requestId` (parsed from the `{status, code,
+    detail, requestId, errors}` envelope) alongside the engine's own `correlationId`, for support
+    correlation — genuinely new diagnostic detail, not a duplicate of `GlobalExceptionHandler`'s own logging
+    (java-code-standards' explicit carve-out), since these calls mostly happen from a background job, not a
+    controller. **Never logs tokens**: the existing shared `RestClientLoggingInterceptor` (reused on the new
+    bean) never logs request headers at all, only the sanitized URL and body — Authorization is never on
+    either.
+  - New `ErrorCode.Integration.BOOST_UNAVAILABLE`/`BOOST_CURSOR_EXPIRED` (not `CONTENT_UNAVAILABLE`, which the
+    old Directus client already owns — same collision-avoidance reasoning as P3.T1), with keys in both i18n
+    bundles.
+- **Tests:**
+  - New `BoostContentClientTest` (`MockRestServiceServer`, per the tracker's own suggestion) — 8 tests: change-feed
+    parsing; the 410 → `BoostCursorExpiredException` mapping; a generic 500 → `BoostIntegrationException`
+    mapping; `topics` parsing; batch chunking (150 refs → two requests of 100 + 50, merged `items`/`missing`
+    back into one result); grading-batch answer-key + per-locale explanation parsing; both sides of the
+    prod/stub guard (throws under `prod`, does not throw otherwise) via `MockEnvironment`.
+  - `./gradlew test --tests io.fordona.engine.learn.theory.client.BoostContentClientTest` → 8/8 passed.
+  - Full suite: `./gradlew test` → **1381 passed, 31 skipped, 0 failures, 0 errors** (Docker available this
+    session, so the Testcontainers-backed classes ran for real, not skipped as in the P0.T1 baseline).
+    `./gradlew compileJava` → clean.
+- **Deviations from the plan:** none beyond the modeling/scoping decisions above, all flagged.
+- **Issues found / open risks:**
+  - `topicKey` and template `sort` field names are taken from Plan §13.4's own examples, not from a captured
+    real payload (today's Boost doesn't have them yet) — same "will be the first real check" caveat P2.T2's
+    entry already carries for `shared.lessonId`/`shared.difficulty`/etc.
+  - The per-locale title/theory-content composition this client's design assumes is **not yet built** — it's
+    P3.T4's job, flagged above so it isn't rediscovered from scratch.
+- **Ready to continue:** YES for P3.T1–P3.T3 (all code-complete, no token needed, nothing here blocks on
+  P0). **P3.T4 onward still needs real Boost data to verify against** (the stub's fixture data, or real Boost
+  once the correct delivery token arrives) for a genuine Testcontainers-backed sync test, though its own unit
+  tests (validation rules, level mapping, etc.) don't need either.
+- **Next task:** P3.T4 (content validation and sync service) — the next task whose dependencies (P3.T2,
+  P3.T3) are now both ticked.
