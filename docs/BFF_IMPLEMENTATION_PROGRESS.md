@@ -530,33 +530,40 @@ every repository the plan touches:
     - [x] the template count changing between attempts.
   - **Acceptance:** the selector is pure; it has no Spring context in its tests.
 
-- [ ] **P4.T4 Start, resume and read attempt** · Repo: ENG · Dep: P4.T3 · Plan §5.1, §6 concurrency, §7.4
-  - [ ] `AttemptService.start(userId, lessonId, requestId)`:
+- [x] **P4.T4 Start, resume and read attempt** · Repo: ENG · Dep: P4.T3 · Plan §5.1, §6 concurrency, §7.4
+  - [x] `AttemptService.start(userId, lessonId, requestId)`:
     - guards: entitlement, the lesson visible and unlocked;
     - selects and pins items with shuffled `option_order` (`SecureRandom`, stored);
     - snapshots the policy and `lesson_version`;
     - inserts the attempt plus items in one batch;
-    - upserts `lesson_progress` (in P5) and bumps `progress_version` (in P5; leave a hook).
+    - upserts `lesson_progress` (in P5) and bumps `progress_version` (in P5; leave a hook). — no hook
+      added yet; `lesson_progress` doesn't exist, so there's nothing to call. `findCompletedLessonIds`
+      derives completion straight from `lesson_attempt.status = 'COMPLETED'` in the meantime.
     - **Idempotency:** a `request_id` conflict is a replay; an open-attempt conflict returns the existing attempt
       (200).
-  - [ ] `get(userId, attemptId)` for resume: 404 for another learner's attempt.
-  - [ ] Internal endpoints:
+    - The racy insert (attempt + items) runs in its own `REQUIRES_NEW` transaction
+      (`AttemptInsertTransaction`) — see `PROGRESS__STATUS.md`, 2026-11-03, P4.T4, for why a shared
+      transaction with the caller would break the race recovery below.
+  - [x] `get(userId, attemptId)` for resume: 404 for another learner's attempt.
+  - [x] Internal endpoints:
     - `POST /internal/theory/v1/lessons/{lessonId}/attempts`;
     - `GET /internal/theory/v1/attempts/{attemptId}`.
     - Responses are `Payload<T>` with item **refs only** (`seq`, `phase`, `questionId`, `version`, `optionOrder`,
       `answered?`); never a key before an answer.
-  - [ ] Internal-route security:
+  - [x] Internal-route security:
     - check for an existing internal-token mechanism first;
     - otherwise add a filter on `/internal/theory/**` that requires a valid JWT **and** an `X-Fordona-Internal-Token`
       equal (constant-time comparison) to config `theory.internal.token`.
+    - No existing mechanism found — `TheoryInternalTokenFilter` is new, registered after
+      `BearerTokenAuthenticationFilter` in `SecurityConfig`.
   - **Tests:**
-    - [ ] happy path;
-    - [ ] 403 locked unit / lesson;
-    - [ ] 404 unknown lesson;
-    - [ ] a replay returns the same attempt;
-    - [ ] a parallel double start creates one attempt (Testcontainers, two threads);
-    - [ ] a missing internal token → 401/403;
-    - [ ] another learner's attempt → 404.
+    - [x] happy path;
+    - [x] 403 locked unit / lesson;
+    - [x] 404 unknown lesson;
+    - [x] a replay returns the same attempt;
+    - [x] a parallel double start creates one attempt (Testcontainers, two threads);
+    - [x] a missing internal token → 401/403;
+    - [x] another learner's attempt → 404.
   - **Acceptance:** no response body contains `correct_option_key` before an answer (assert by JSON search).
 
 - [ ] **P4.T5 Answer endpoint and grading** · Repo: ENG · Dep: P4.T4 · Plan §5.4, §5.5, §6

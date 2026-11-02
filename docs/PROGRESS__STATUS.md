@@ -1294,3 +1294,82 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Issues found / open risks:** none new.
 - **Ready to continue:** YES.
 - **Next task:** P4.T4 (start, resume and read attempt) — depends only on P4.T3, which is now done.
+
+### 2026-11-03 · P4.T4 · Start, resume and read attempt
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 9bd75b95
+- **What was done:**
+  - `AttemptService.start(userId, lessonId, requestId)`: checks `(userId, requestId)` first (true
+    replay if the lesson matches, `THEORY_REQUEST_ID_CONFLICT` if it doesn't — the same `requestId`
+    reused for a different lesson), then any open (non-`COMPLETED`) attempt on the lesson (resume),
+    then guards (lesson exists → `THEORY_LESSON_NOT_FOUND`; locked → `THEORY_MODULE_LOCKED` if the
+    unit isn't entitled, else `THEORY_LESSON_LOCKED`, reusing `UnlockService`'s `LOCKED` status and
+    re-checking entitlement only to pick which of the two errors applies), then selects via
+    `QuestionSetSelector`, shuffles each question's `option_keys` with `SecureRandom`, resolves the
+    retry policy from the snapshot, and inserts.
+  - **A real transaction-isolation bug caught before it shipped, not after:** Plan §6 says a losing
+    `start()` recovers from the unique-constraint violation by re-querying for whichever row won. The
+    first draft wrapped the whole method in one `@Transactional`, including the racy insert — but
+    Postgres aborts a transaction block *entirely* on a constraint violation; any further statement on
+    that same connection fails with "current transaction is aborted" until it's rolled back. The
+    recovery re-query would have failed too, on the very connection the plan's own recovery strategy
+    depends on. Fixed by splitting the insert into its own bean, `AttemptInsertTransaction`, with
+    `@Transactional(propagation = REQUIRES_NEW)` — a genuinely separate connection regardless of the
+    caller's own transactional state — and removing `@Transactional` from `start()` itself entirely
+    (Plan §6 already says start takes no lock, so there's nothing for it to protect). This was caught
+    by reasoning about Postgres's own error-recovery semantics before writing the concurrency test, not
+    by watching the test fail — though the test (below) would have caught it either way, non-
+    deterministically, since the race only manifests under genuine thread contention.
+  - `get(userId, attemptId)`: 404 (`THEORY_ATTEMPT_NOT_FOUND`) for both an unknown id and another
+    learner's attempt — the store's `findById` is unconditional, the ownership filter happens in the
+    service, same "don't even confirm the id exists" shape the exception's own javadoc (from P3.T1)
+    already specified.
+  - `lesson_attempt`/`attempt_item` are written via hand-rolled `@Modifying @Query INSERT`, never
+    `CrudRepository#save()` — `attempt_id` is a client-assigned `UUID`, and Spring Data JDBC's default
+    `save()` treats an entity whose id is already set as an *update*, which would silently no-op
+    against a row that doesn't exist yet. `attempt_item`'s composite key (`attempt_id`, `seq`) folds
+    into `LessonAttemptRepository`, the same convention `content_question_revision`/
+    `question_neighbour` already use.
+  - `TheoryInternalTokenFilter`: no existing `X-Fordona-Internal-Token` mechanism existed anywhere in
+    the codebase (confirmed by search before writing this). Registered via
+    `addFilterAfter(filter, BearerTokenAuthenticationFilter.class)` so JWT authentication has already
+    run; compares with `MessageDigest.isEqual`, never `String.equals`, per CLAUDE.md's own security
+    practices. Only wired into the non-dev-mode branch of `SecurityConfig` — `security.dev-mode=true`
+    already permits every path, so there's nothing for this filter to add there.
+  - `lesson_progress` (P5) genuinely doesn't exist yet, so the tracker's own "upsert lesson_progress /
+    leave a hook" has no hook to leave — `findCompletedLessonIds` instead derives completion directly
+    from `lesson_attempt.status = 'COMPLETED'`, which already carries the fact `UnlockService` needs.
+    P5 can either keep reading it this way or switch to `lesson_progress` once that table exists;
+    nothing here commits to one or the other.
+- **Tests:**
+  - `AttemptServiceTest` (6 tests, real Postgres): happy path (3 pinned, unanswered items, shuffled
+    option order); unknown lesson → 404; unit not entitled → `THEORY_MODULE_LOCKED`; previous lesson
+    not completed → `THEORY_LESSON_LOCKED`; a replay with the same `requestId` returns the identical
+    attempt with no second row; **two real threads racing `start()` for the same user/lesson with
+    different `requestId`s produce exactly one row and both threads observe the same attempt id** —
+    the tracker's own concurrency acceptance check, and the one that would have caught the transaction
+    bug above if it hadn't been caught first by reasoning about it.
+    **Deliberately does not use the shared `ContentSnapshotProvider`/`ContentSnapshotBuilder`
+    singletons**: they read `findAllUnits()`/`findAllVisibleLessons()` unfiltered over the whole
+    `IntegrationTestBase`-shared, never-rolled-back Postgres instance, so hundreds of other tests'
+    leftover units/lessons (often sharing this test's own `sort` values) would sit in
+    `UnlockService`'s global ordering ahead of this test's fixtures, non-deterministically locking a
+    lesson that should be `CURRENT` — caught directly by running the suite, not by inspection: the
+    happy-path test failed with `THEORY_LESSON_LOCKED` on a lesson with nothing before it. Fixed by
+    building the `ContentSnapshot` directly from this test's own fixtures (`ContentSnapshot.build`)
+    while still seeding the real content rows for `lesson_attempt`/`attempt_item`'s foreign keys, and
+    mocking `TheoryEntitlement` directly rather than seeding real subscription rows per scenario.
+  - `TheoryAttemptInternalControllerTest` (6 tests): no JWT and no internal token → 403 (this
+    implementation's filter ordering never produces 401 — documented in the test itself, and the
+    tracker's own "401/403" wording already accepts either); valid JWT but missing or wrong internal
+    token → 403; valid JWT + internal token → 200, and the raw response body contains neither
+    `correctOptionKey` nor `correct_option_key` anywhere (the tracker's own acceptance line, asserted
+    by string search exactly as specified, not by field-presence alone); another learner's attempt →
+    404.
+  - Full suite: `./gradlew test` → **1556 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** none beyond the transaction-isolation fix above, which implements
+  Plan §6's own stated recovery strategy correctly rather than deviating from it.
+- **Issues found / open risks:** none new.
+- **Ready to continue:** YES.
+- **Next task:** P4.T5 (answer endpoint and grading) — depends only on P4.T4, which is now done.
