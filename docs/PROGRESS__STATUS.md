@@ -1832,3 +1832,91 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Next task:** P5.T3 (ProgressService write path) — depends on P5.T2 (now done) and P4.T7 (done).
   Should also fold in the deferred timezone-on-summary write from this task if the write path it builds
   is the first real place to put it; otherwise P5.T4 picks it up.
+
+### 2026-11-03 · P5.T3 · ProgressService write path
+
+- **Status:** DONE — also closes P5.T2's deferred timezone-on-summary bullet.
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · a3beea46
+- **What was done:**
+  - New `ProgressRepository` (owning entity `LearnerTheorySummaryEntity` — the only one of the four
+    progress tables with a real single-column PK; `lesson_progress`/`learner_activity_day`/
+    `learner_activity_lesson` fold in as raw `@Query` methods, the same convention
+    `attempt_item`/`mistake` already use inside `LessonAttemptRepository`), `ProgressStore`/
+    `ProgressStoreProvider`, and `ProgressService` with two public methods:
+    - `recordAttemptStarted(userId, lessonId, unitId, attemptId, attemptNo, now)` — upserts
+      `lesson_progress` (`attempts = attemptNo`, `open_attempt_id`, status `IN_PROGRESS` **unless**
+      already `COMPLETED` — a retake of a finished lesson never regresses its status) and bumps
+      `progress_version`. Called from `AttemptService#start`, right after the attempt insert succeeds.
+    - `recordLessonCompleted(userId, lessonId, unitId, lessonCorrect, lessonTotal, timezoneHeader, now)`
+      — Plan §5.7 steps 2–4 in one method: `lesson_progress` upsert with `GREATEST`-protected
+      `best_accuracy`/`best_lesson_correct` and a once-only `first_completed_at` (`COALESCE`); the
+      activity-lesson `ON CONFLICT DO NOTHING` insert, incrementing `learner_activity_day` only when
+      that insert actually happened; then the summary's streak rule (unchanged if already active today,
+      `+1` if yesterday, reset to 1 otherwise), `longest_streak = GREATEST(...)`,
+      `sum_best_accuracy += (newBest - oldBest)`, `completed_lessons + 1` only on a genuine first
+      completion, and `progress_version + 1` — all under a `SELECT ... FOR UPDATE` lock on the summary
+      row, created lazily via `INSERT ... ON CONFLICT DO NOTHING` if this is the learner's first
+      contact. Called from `AttemptService#completeLessonPhase`'s W = 0 branch and from
+      `#completeRetryPhase` (always, since reaching retry completion means the attempt is now
+      `COMPLETED`); both pass `attempt.getLessonCorrect()`/`getLessonTotal()` — the **lesson phase's**
+      own counts, never the retry phase's, per Plan §5.7's own readiness definition.
+  - `lessonCorrect`/`lessonTotal` → `accuracy` is `BigDecimal.valueOf(correct).divide(valueOf(total), 4,
+    RoundingMod.HALF_UP)` per CLAUDE.md's BigDecimal rule — no bare `.divide()`.
+  - All writes are ordinary method calls inside the caller's existing `@Transactional` boundary, never
+    the event bus — CLAUDE.md's "events carry side effects, never consequences": losing a completed
+    lesson's progress row would make finished work invisible on the home screen, a consequence, not a
+    side effect.
+- **Closes P5.T2's deferred bullet:** both phase-completion controller endpoints now accept
+  `X-Timezone` (`required = false`, matching every other optional header in this controller) and
+  forward it down to `AttemptService`/`ProgressService`. `TheoryTimezoneResolver.resolve(...)` resolves
+  it, and the resolved zone id is written to `learner_theory_summary.timezone` on every completion —
+  this is the "first real call site" P5.T2 anticipated.
+- **A necessary decision, not a guess:** `learner_theory_summary` is created **lazily on first
+  contact** (`INSERT ... ON CONFLICT DO NOTHING` before the `FOR UPDATE` read), even though Plan §5.7's
+  write path only ever says "update" the summary, which P5.T1's entry read as implying some other,
+  unspecified creation path. Nothing anywhere in the plan or this codebase creates that row any other
+  way, and this task **is** the thing that would need to read/write it — so "update only" would mean
+  the summary simply never exists. Chose the only behaviour that makes the feature work, logged
+  explicitly rather than left silently inconsistent with the earlier entry's reading of "update."
+- **A correction to P5.T1, caught by this task's own tests:** `lesson_progress.open_attempt_id`'s FK
+  to `lesson_attempt(attempt_id)`, added in P5.T1, is **removed**. Plan §6's "Constraints and indexes"
+  table — the authoritative list P5.T1's own entry said it was matching exactly — lists only the PK and
+  the partial index on this column, no FK. The FK went in anyway (an oversight, not a deliberate
+  reading of the table), and this task's own `ProgressServiceTest` surfaced it immediately: upserting
+  `lesson_progress` with a synthetic `open_attempt_id` UUID (no reason a progress-layer test should need
+  a fully content-backed `lesson_attempt` row just to satisfy an FK the plan never asked for) failed
+  with a foreign-key violation. Removed the FK and corrected `V1_0_19`'s own header comment to explain
+  why, alongside the two omissions already logged there. The migration was never pushed to any shared
+  branch, so it was amended in place rather than issuing a correction migration — the usual "never edit
+  a shipped migration" rule doesn't apply to a migration nothing has run against yet outside this
+  session's own ephemeral Testcontainers instances.
+- **Tests:** new `ProgressServiceTest` (14 tests, real Postgres via `IntegrationTestBase` — upsert/
+  `GREATEST`/`ON CONFLICT`/`FOR UPDATE` semantics are exactly what a mock can't reproduce): first
+  completion sets streak/completedLessons to 1; same local day again leaves the streak unchanged; the
+  next local day increments it; a gap of more than one day resets it to 1 (and confirms the earlier
+  streak-of-1 high isn't beaten); a same-day retake counts once in `learner_activity_day`; two different
+  lessons the same day count twice; a lower-accuracy retake never lowers `best_accuracy`; a
+  higher-accuracy retake raises it; a retake never double-counts `completed_lessons`; two calls that
+  resolve to the same local date under *different* timezones still count once (the literal scenario
+  Plan §5.7 cites `learner_activity_lesson`'s key for); attempt-start upserts `open_attempt_id`/
+  `IN_PROGRESS`; a retake-start on an already-`COMPLETED` lesson leaves its status alone; attempt-start
+  bumps `progress_version`; and the tracker's own acceptance test — 3 lessons across 2 local days,
+  asserting every summary field (`completedLessons`, `currentStreak`, `longestStreak`,
+  `lastActiveDate`, `sumBestAccuracy` to 4 decimal places, `timezone`) plus both days' activity counts.
+  `AttemptServiceTest` (36/36) and `TheoryAttemptInternalControllerTest` (17/17) both still pass
+  unchanged after the signature additions (a `null` timezone header in existing calls resolves to the
+  default zone, which doesn't affect any of their assertions). Full suite:
+  `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** the lazy-summary-creation decision and the `open_attempt_id` FK removal,
+  both above — logged, not silent.
+- **Issues found / open risks:**
+  - `recordAttemptStarted` is called from `AttemptService#start`, which is deliberately **not**
+    `@Transactional` (Plan §6's race-recovery design, P4.T4) — so this progress write is **not atomic**
+    with the attempt insert. A crash between them would leave an attempt row with no matching
+    `lesson_progress` update (recoverable on the next read, not corrupting), which is consistent with
+    `start()`'s existing non-atomic design rather than a new weakness this task introduced, but worth
+    knowing if `lesson_progress`/attempt state are ever found disagreeing in practice.
+  - Carried forward, unrelated to this task: `levelDropAllowed` (P4.T6) still unwired; the two P4.T8
+    deviations (locked → 200, partial `estimatedMinutes`) still worth a plan-owner confirmation.
+- **Ready to continue:** YES.
+- **Next task:** P5.T4 (home endpoint) — depends on P5.T3, which is now done. Plan §7.3 `GET /v1/home`.

@@ -691,20 +691,22 @@ every repository the plan touches:
   - **Unit tests:** invalid zone ignored; 23:59 / 00:01 boundaries; DST transition days (Europe/Stockholm, both
     March and October).
 
-- [ ] **P5.T3 ProgressService write path** · Repo: ENG · Dep: P5.T2, P4.T7 · Plan §5.7
-  - [ ] In the lesson-completion transaction (W = 0 lesson complete, or retry complete), steps 1–4 of Plan §5.7:
+- [x] **P5.T3 ProgressService write path** · Repo: ENG · Dep: P5.T2, P4.T7 · Plan §5.7
+  - [x] In the lesson-completion transaction (W = 0 lesson complete, or retry complete), steps 1–4 of Plan §5.7:
     - `lesson_progress` upsert with `GREATEST(best_accuracy)`;
     - the activity-lesson insert `ON CONFLICT DO NOTHING`, then the day upsert if inserted;
     - the summary: streak rule, longest streak, `sum_best_accuracy += delta`, `completed_lessons` on the first
       completion, `progress_version + 1`.
-  - [ ] Attempt start: upsert `lesson_progress` (`open_attempt_id`, `IN_PROGRESS` if not completed) and bump
+  - [x] Attempt start: upsert `lesson_progress` (`open_attempt_id`, `IN_PROGRESS` if not completed) and bump
         `progress_version`. Fill in the P4.T4 hook.
+  - [x] Also closes P5.T2's deferred bullet: `X-Timezone` is now threaded through both phase-completion
+        endpoints and stored on the summary at the same write.
   - **Unit tests:**
-    - [ ] streak today / yesterday / gap;
-    - [ ] the same lesson twice in a day counts once;
-    - [ ] two different lessons count twice;
-    - [ ] a retake improves `best_accuracy` and never lowers it;
-    - [ ] a timezone change doesn't double count.
+    - [x] streak today / yesterday / gap;
+    - [x] the same lesson twice in a day counts once;
+    - [x] two different lessons count twice;
+    - [x] a retake improves `best_accuracy` and never lowers it;
+    - [x] a timezone change doesn't double count.
   - **Acceptance:** a Testcontainers test runs 3 lessons across 2 local days and asserts every summary field.
 
 - [ ] **P5.T4 Home endpoint** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/home`
