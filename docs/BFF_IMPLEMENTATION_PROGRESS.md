@@ -121,15 +121,16 @@ every repository the plan touches:
 
 - [ ] **P1 — phase done**
 
-- [ ] **P1.T1 Retire the leaky catalogue routes (Plan §15, R-11)** · Repo: BFF · Dep: P0.T1
-  - [ ] Search the web app (`fordona-trafikskola-web`, `fordona-next`) and any other client for calls to
+- [x] **P1.T1 Retire the leaky catalogue routes (Plan §15, R-11)** · Repo: BFF · Dep: P0.T1
+  - [x] Search the web app (`fordona-trafikskola-web`, `fordona-next`) and any other client for calls to
         `/v1/questions`, `/v1/lessons/{id}/questions` and `/v1/modules`. Record the findings.
-  - [ ] If a client uses them, write its migration path into `PROGRESS__STATUS.md` and get approval before deleting.
-  - [ ] Delete `api/routes/questions.py` and the `/{lessonId}/questions` route in `api/routes/lessons.py`, along with
+  - [x] ~~If a client uses them, write its migration path into `PROGRESS__STATUS.md` and get approval before
+        deleting.~~ — not needed: no client calls them (see `PROGRESS__STATUS.md`, 2026-11-02 P1.T1).
+  - [x] Delete `api/routes/questions.py` and the `/{lessonId}/questions` route in `api/routes/lessons.py`, along with
         the service methods and schemas used only by them.
-  - [ ] Delete `api/routes/modules.py` (replaced by `GET /v1/learning-path` in P6).
-  - [ ] Keep the `GET /v1/lessons/{lessonId}` path; its new meaning is implemented in P6.T5.
-  - [ ] Remove or replace the tests that covered the deleted routes.
+  - [x] Delete `api/routes/modules.py` (replaced by `GET /v1/learning-path` in P6).
+  - [x] Keep the `GET /v1/lessons/{lessonId}` path; its new meaning is implemented in P6.T5.
+  - [x] Remove or replace the tests that covered the deleted routes.
   - **Unit tests:** the route table no longer contains the deleted paths, verified by a test that iterates
     `app.routes`.
   - **Acceptance:** `GET /v1/questions` and `GET /v1/lessons/1/questions` return 404 on a local run; the full test
