@@ -142,3 +142,47 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   - `mypy tests` is not clean (34 pre-existing errors). Not a repo standard today; worth fixing separately.
 - **Ready to continue:** YES for P1.T1. The P1 phase exit needs the decision above plus P1.T2 (needs P0.T3 and P0.T4).
 - **Next task:** P1.T2 (BFF/EXT; blocked on P0.T3, P0.T4) or P2.T1 if the owner allows it.
+
+### 2026-11-02 · P1.T1 (addendum) · Lesson routes removed until P6.T5
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF · feat/theory-app-implementations · 788c761
+- **Owner decision recorded (2026-11-02):** option (b) of the question in the P1.T1 entry: remove
+  `GET /v1/lessons` and `GET /v1/lessons/{lessonId}` now. P6.T5 re-adds `GET /v1/lessons/{lessonId}` with the
+  engine's lock check; `GET /v1/lessons` does not come back (it is not in Plan §7.3).
+- **What was done:**
+  - Deleted the lesson routes and everything used only by them: `api/router.py`, `api/routes/lessons.py`,
+    `api/responses.py`, `services/content_service.py`, `services/mappers.py`, `schemas/lessons.py`,
+    `schemas.common.Page`/`Localized`, and the content deps (`Content`, `serve`, `PageNumber`, `PageSize`).
+    `container.py` no longer builds the Boost HTTP client or the content cache; `Services` holds the verifier and
+    the readiness checks. The routed surface is now `/health/live` and `/health/ready` only.
+  - Kept, as P6 building blocks with their unit tests: the auth and locale dependencies (`CurrentLearner`,
+    `Locale`), `clients/boost/*`, `services/content_cache.py`, `cache/*`, `db/*` (snapshot store; readiness still
+    pings Postgres and Redis), `schemas.common.Problem`/`ContentId`.
+  - Tests: the harness mounts a **test-only probe route** (`/v1/__probe`, `tests/conftest.py`) that depends on the
+    real `CurrentLearner` and `Locale`, so the auth boundary is still tested end to end through HTTP. New
+    `tests/api/test_auth_boundary.py` (auth 401 cases, valid token, auth-disabled local, locale default /
+    `Accept-Language` / query precedence / 422, correlation id, CORS preflight, no answer fields in any OpenAPI
+    schema). The login-security demo now runs against the probe. Removed `tests/api/test_content_routes.py` and
+    `tests/demo/test_endpoints_showcase.py`: their content-route behaviour (mapping, stale snapshot, 502/503/504,
+    Redis down) is deleted with the routes, and the underlying cache and client behaviour stays covered by
+    `tests/unit/test_content_cache.py` (22 tests) and `tests/unit/test_boost_client.py` (21 tests).
+  - **Bug found and fixed in my P1.T1 test (5aa0b87):** `test_route_table_has_no_retired_path` filtered
+    `app.routes` on `APIRoute`, but FastAPI 0.143 wraps included routers (`_IncludedRouter`), so the set was empty
+    and the test **passed vacuously**. It now reads `app.openapi()["paths"]` (verified against the previous commit:
+    it returns `/v1/lessons`, `/v1/lessons/{lessonId}` and the health paths), and the new exact check
+    `test_route_table_serves_only_health_probes` fails if the set is ever empty. The 404 behaviour tests were not
+    affected. Recorded in `CLAUDE.md` "Known gaps".
+  - `README.md` and `CLAUDE.md` updated for the health-only surface.
+- **Tests:**
+  - `uv run pytest -q` → 165 passed / 165, 0 skipped (`-m integration` → 7 passed; Docker running).
+  - `uv run ruff check .` → all checks passed; `uv run ruff format --check .` → 63 files already formatted;
+    `uv run mypy src` → no issues in 33 source files.
+  - Acceptance (local `uvicorn`): `GET /v1/questions`, `/v1/lessons/1/questions`, `/v1/modules`, `/v1/lessons`,
+    `/v1/lessons/1` → 404; `/health/live` → 200; `/openapi.json` paths = `/health/live`, `/health/ready`.
+- **Deviations from the plan:** `GET /v1/lessons/{lessonId}` is absent between now and P6.T5 (owner decision).
+- **Issues found / open risks:** none new. The P1 exit check "no leaky route in any deployed build" now holds for
+  this build.
+- **Ready to continue:** YES. P1.T2 is blocked on P0.T3 and P0.T4 (owner). Continuing with P2.T1 per the owner's
+  instruction to continue implementing (its only dependency, P0.T1, is ticked).
+- **Next task:** P2.T1.

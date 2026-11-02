@@ -129,7 +129,10 @@ every repository the plan touches:
   - [x] Delete `api/routes/questions.py` and the `/{lessonId}/questions` route in `api/routes/lessons.py`, along with
         the service methods and schemas used only by them.
   - [x] Delete `api/routes/modules.py` (replaced by `GET /v1/learning-path` in P6).
-  - [x] Keep the `GET /v1/lessons/{lessonId}` path; its new meaning is implemented in P6.T5.
+  - [x] Keep the `GET /v1/lessons/{lessonId}` path; its new meaning is implemented in P6.T5. — Owner decision
+        2026-11-02: `GET /v1/lessons` and `GET /v1/lessons/{lessonId}` are **removed until P6.T5**, which re-adds
+        the path with the engine's lock check (they served paid theory with no entitlement check, R-8). See
+        `PROGRESS__STATUS.md`, 2026-11-02 P1.T1 addendum.
   - [x] Remove or replace the tests that covered the deleted routes.
   - **Unit tests:** the route table no longer contains the deleted paths, verified by a test that iterates
     `app.routes`.
