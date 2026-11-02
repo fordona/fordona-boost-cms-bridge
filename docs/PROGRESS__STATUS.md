@@ -250,3 +250,80 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   today's Boost) and therefore P2.T3, plus all of P3 (needs P0), wait on **P0.T3: a Boost delivery token and a
   grading token** (P0.T2/P0.T4 for P3 too). No task in the tracker has all its dependencies ticked now.
 - **Next task:** finish P2.T1's acceptance run, then P2.T2, once the P0.T3 tokens exist.
+
+### 2026-11-02 · P2.T2 · Template generator (code only)
+
+- **Status:** PARTIAL (all sub-tasks done; the live run and the committed `stub-data/` files wait on P0.T3)
+- **Repo / branch / commit:** BFF · feat/theory-app-implementations · d35aff4
+- **Owner decision recorded (2026-11-02):** start P2.T2 before its dependency P0.T3 is ticked, building the code
+  and unit tests without Boost; only the final run against today's Boost waits for the delivery token.
+- **What was done:**
+  - `scripts/stub_data/generator.py`: the pure core, with no I/O, clock or randomness.
+    - Per published lesson, questions with difficulty 1–5 are sorted by `(difficulty, id)` and dealt round-robin
+      (question i → template i mod k) into `k = max(1, floor(n/8))` templates.
+    - Lessons with < 3 real questions are topped up to 8 with `[DEMO]` questions.
+    - Template ids start at 9,000,001 and synthetic-question ids at 9,500,001 (both ≥ 9,000,000). Each is keyed by
+      `(lessonId, sort)` / `(lessonId, slot)`, so it is stable across runs. Ids are **never reused**:
+      `nextTemplateId` / `nextQuestionId` are carried in the files.
+    - `version` bumps only when a template's membership or order changes, or a synthetic question's content
+      changes. `generation` bumps only when either file changes.
+    - Output is sorted-key UTF-8 JSON with a trailing newline (`render`).
+  - `scripts/stub_data/synthetic.py`: six `[DEMO]` variants, complete in both locales (prompt, options, correct
+    option, per-locale explanation). Together they show text, image, an image option, lottie and video_loop
+    animations, video with captions, audio with a transcript, and RULE and SIGN rule cards, each only where §4.6
+    allows it. A thin lesson always gets ≥ 6 consecutive variants, so **any one thin lesson shows every block
+    type**. Asset ids are `demo/...` placeholders.
+  - `scripts/stub_data/boost_source.py`: paged delivery reads (`pageSize` 250, `sv-SE`) of modules, lessons and
+    questions, reading only ids, a lesson's module, and a question's lesson, subject and difficulty. It accepts the
+    nested and the flat item shape and fails loudly on any non-200.
+    `scripts/generate_stub_templates.py`: the CLI (`uv run python -m scripts.generate_stub_templates`). It reads
+    `BOOST_BASE_URL` / `BOOST_DELIVERY_TOKEN` from the process environment only (never `.env`), reads the previous
+    files, writes both, and prints a report (skipped questions with reasons, topped-up lessons, missing demo media).
+  - CI and `CLAUDE.md`: mypy now covers `src scripts`.
+- **Tests:**
+  - New: `tests/unit/test_stub_template_generator.py` and `tests/unit/test_stub_generator_io.py` → 59 passed.
+    - Tracker items: byte-identical output across runs (also with shuffled input); per-level counts per template
+      differ by ≤ 1 for n ∈ {8, 16, 17, 24, 29, 40, 47}; thin-lesson top-up 0/1/2 → 8/7/6 synthetic and 3 → none;
+      id range and distinctness.
+    - Beyond them: k and remainder sizes; dealing order; never-reused ids after shrink and regrow; version bump
+      only for the changed lesson; synthetic content change bumps version and keeps id; re-run → no diff (also
+      through the files); every synthetic variant validated with the contract suite's §4.6 validator in both
+      locales, with the correct option among the options; Boost reader paging, nested/flat parsing, and error.
+  - Mutation check (temporary edits, reverted): chunked dealing → 6 failures; always-bump versions → 4 failures;
+    id reuse from the current file's max → 1 failure. The tests are not vacuous.
+  - Full suite: `uv run pytest -q` → 264 passed, 52 skipped (contract suite, no base URL) / 316.
+    `uv run ruff check .` → all checks passed; `uv run ruff format --check .` → 85 files already formatted;
+    `uv run mypy src scripts` → no issues in 39 source files.
+  - The script without a token exits 1 with "BOOST_DELIVERY_TOKEN is required" and writes nothing.
+  - Acceptance (**pending P0.T3**): generated files committed, and a re-run produces no diff. Covered by
+    `test_rerun_produces_no_diff` on fixture data, but not yet run on real Boost data.
+- **Decisions taken where the plan is silent (please confirm or correct):**
+  1. **Stable ids and the never-reuse counters.** The plan says "ids from a reserved range". Without stability,
+     every regeneration would renumber templates, and the engine would see every template as new. Without
+     never-reuse, a removed id could come back with different questions under an attempt that pinned it.
+  2. **Separate sub-ranges:** templates from 9,000,001, synthetic questions from 9,500,001, both inside the
+     reserved range, so an id alone tells which kind it is.
+  3. **Synthetic subject (domain):** the most common `subjectId` among the module's real questions, else the
+     bank's. The engine excludes questions with an unknown domain (§4.4), so a synthetic question without one
+     would hide its whole template.
+  4. **Questions with a missing or out-of-range difficulty, or no published lesson, are skipped and reported**,
+     not dealt. They would be excluded at engine sync anyway and would skew the difficulty mix.
+  5. **Template titles** are labels (`Mall A` / `Template A`), not the lesson's title: §13.4 calls the title an
+     internal label, and labels keep the output independent of lesson-title edits.
+  6. **`synthetic.json` record shape** is locale-neutral (`translations` + `explanation` per locale +
+     `correctOptionId`); P2.T3's stub renders it into the §13.4 delivery and grading shapes.
+- **Issues found / open risks:**
+  - **QUESTION (P2.T2 acceptance):** the tracker requires `synthetic.json` to show every block type, but synthetic
+    questions exist only for thin lessons (< 3 real questions). If today's Boost has **no** thin lesson,
+    `synthetic.json` is empty and the stub has no rich-media demo content at all. The generator then prints a
+    warning, and `test_no_thin_lesson_reports_the_missing_demo_media` covers that. Options:
+    (a) accept it; rich media then appears only once Eric authors it;
+    (b) always add one `[DEMO] Media showcase` template to the first lesson, built from the six variants,
+        whatever its real question count.
+    Recommendation: decide after the first live run shows whether any thin lesson exists. If none does, (b).
+  - Boost's delivery field names (`shared.lessonId`, `shared.difficulty`, `shared.subjectId`,
+    `shared.moduleId`) are still **inferred** (README). The live run will be their first real check.
+  - The `demo/...` media files must exist in the dev media bucket for the BFF to resolve them (ops, O-10).
+- **Ready to continue:** NO, blocked on the owner. P2.T1's and P2.T2's acceptance runs need **P0.T3: a Boost
+  delivery token and grading token**. P2.T3 depends on both being ticked; P3 needs all of P0.
+- **Next task:** with the tokens: P2.T1 acceptance run → P2.T2 live run and commit of `stub-data/` → P2.T3.

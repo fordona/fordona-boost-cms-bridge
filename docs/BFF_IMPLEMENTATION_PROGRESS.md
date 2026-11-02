@@ -188,23 +188,25 @@ every repository the plan touches:
   - **Acceptance:** the suite runs and **fails cleanly** (it doesn't error) against today's Boost, which proves the
     assertions are meaningful; it is wired into CI as a separate job.
 
-- [ ] **P2.T2 Template generator** · Repo: BFF · Dep: P0.T3 · Plan §4.5
-  - [ ] `scripts/generate_stub_templates.py`: reads published modules, lessons and questions from today's Boost (delivery
+- [ ] **P2.T2 Template generator** · Repo: BFF · Dep: P0.T3 · Plan §4.5 — PARTIAL (2026-11-02, started early on
+  the owner's instruction): code and unit tests done; the live run and the committed files wait for the Boost
+  delivery token (P0.T3), see `PROGRESS__STATUS.md`
+  - [x] `scripts/generate_stub_templates.py`: reads published modules, lessons and questions from today's Boost (delivery
         token from env).
-  - [ ] Per lesson:
-    - [ ] sort by (difficulty, id);
-    - [ ] deal round-robin into `k = max(1, floor(n/8))` templates, spreading the remainder one per template;
-    - [ ] top lessons with fewer than 3 real questions up to 8 with synthetic `[DEMO]` questions.
-  - [ ] Template ids ≥ 9,000,000; a `generation` number; a `version` bump only for changed templates.
-  - [ ] Writes `stub-data/templates.json` and `stub-data/synthetic.json`, deterministically.
-  - [ ] `synthetic.json` holds full questions with keys and explanations, covering **every block type** (Plan §4.6):
+  - [x] Per lesson:
+    - [x] sort by (difficulty, id);
+    - [x] deal round-robin into `k = max(1, floor(n/8))` templates, spreading the remainder one per template;
+    - [x] top lessons with fewer than 3 real questions up to 8 with synthetic `[DEMO]` questions.
+  - [x] Template ids ≥ 9,000,000; a `generation` number; a `version` bump only for changed templates.
+  - [x] Writes `stub-data/templates.json` and `stub-data/synthetic.json`, deterministically.
+  - [x] `synthetic.json` holds full questions with keys and explanations, covering **every block type** (Plan §4.6):
         text, image, animation (lottie and video_loop), video with captions, audio with transcript, rule_card. It
         also covers at least one option with an image.
   - **Unit tests:**
-    - [ ] deterministic output (two runs on the same input are byte-equal);
-    - [ ] difficulty spread per template within ±1 level;
-    - [ ] the thin-lesson top-up;
-    - [ ] id range.
+    - [x] deterministic output (two runs on the same input are byte-equal);
+    - [x] difficulty spread per template within ±1 level;
+    - [x] the thin-lesson top-up;
+    - [x] id range.
   - **Acceptance:** the generated files are committed, and the generator re-run produces no diff.
 
 - [ ] **P2.T3 Boost stub service** · Repo: BFF · Dep: P2.T1, P2.T2 · Plan §4.5, §13
