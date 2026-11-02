@@ -1095,3 +1095,94 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   stub every 30 s, holds a snapshot per instance, and the content report is in place. P4 (engine:
   attempts, grading, retry) is next, starting with P4.T1 (migrations and retry policy), but per this
   session's pattern that's a proposal to make, not something to start unilaterally.
+
+### 2026-11-02 · P4.T1 · Migrations and retry policy
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 20268b67
+- **What was done:**
+  - `V1_0_17__theory_attempts.sql`: `lesson_attempt`, `attempt_item`, `mistake` with every Plan §6
+    column, the tracker's own constraint list (the `UNIQUE(app_user_id, request_id)`, the partial
+    unique one-open-attempt-per-lesson index, `PK(attempt_id, seq)` + `UNIQUE(response_id)`, both
+    named indexes, and non-negative-count CHECKs), plus one strengthening beyond the tracker's literal
+    list: a composite FK `attempt_item (question_id, version) → content_question_revision (question_id,
+    version)`, so a pinned revision can never point at a version that was never synced.
+  - `V1_0_18__theory_retry_policy.sql`: `retry_policy` with the seeded GLOBAL row (every key, the
+    tracker's own defaults). **Deviation, logged deliberately:** Plan §6's diagram shows this table's
+    PK as `(scope, scope_id)` directly; this uses a surrogate `BIGSERIAL id` + `UNIQUE(scope,
+    scope_id)` instead, the same shape `theory_lesson_progress` (V1_0_4, pre-dating this feature)
+    already uses for its own natural key. Spring Data JDBC's `CrudRepository` wants one single
+    `@Id`, and unlike `content_template_question`/`question_neighbour` (which fold into a sibling
+    entity's repository that already has one), there is no natural parent entity for this table to
+    fold into — so a surrogate id is more idiomatic here than inventing a composite-key repository
+    from scratch.
+  - Both `policy_snapshot`/`option_order`/`key_values` are TEXT holding JSON from the start, not
+    JSONB-then-converted — the mistake from P3.T2 (the engine has no JSONB converter pair registered
+    anywhere) is now known up front, so there was no need to repeat the two-migration fix.
+  - `RetryPolicyResolver` (pure, like `NeighbourRanker`): merges every stored row that applies —
+    GLOBAL, then UNIT, then LESSON — **key by key**, not row-by-row, so a LESSON row overriding only
+    `extras_per_wrong` still inherits `extras_min`/`extras_max`/etc. from UNIT or GLOBAL. Falls back
+    to Plan §5.6's hardcoded defaults if even the seeded GLOBAL row is somehow missing a key.
+    `RetryPolicyKey` is the single table of which keys exist at which scopes (`similar_scope` never at
+    LESSON, `difficulty_level_map` only at GLOBAL), read by both the resolver and the validator so the
+    two can't drift apart on this.
+  - **Cached in the snapshot, per the tracker's own wording:** `ContentSnapshot` now holds the whole
+    `retry_policy` table (a handful of rows) and exposes `retryPolicyFor(unitId, lessonId)`, resolving
+    lazily per call rather than precomputing one policy per lesson up front — cheap enough (linear
+    scan over a handful of rows) that precomputing would solve a problem that doesn't exist yet.
+  - Platform endpoints on the existing `TheoryContentPlatformController`: `GET
+    /v1/platform/theory/retry-policy` (every stored row) and `PUT
+    /v1/platform/theory/retry-policy/{scope}/{scopeId}`. The PUT is a **full replace** of that row's
+    overrides (CLAUDE.md's own PUT = full-replace rule), not a merge — a field left out of the body is
+    cleared, not left as it was. This was a real design decision, not a default: a merge would better
+    match "set one override without resending the rest", but CLAUDE.md is explicit that PUT means full
+    replace and PATCH means partial, and `GET` already returns each row's current content for a
+    front-end to load-modify-resend. Logged here so a future PATCH variant isn't mistaken for a fix to
+    a bug.
+  - **A real security gap caught before it shipped:** the tracker doesn't specify where `updated_by`
+    comes from. A first draft took it from the request body — trusting the caller to say who they are
+    is exactly the kind of thing CLAUDE.md's Identity section calls out as a defect elsewhere in this
+    codebase. Fixed before writing any test against it: `updated_by` is derived from
+    `AuthenticatedUser#getUserId(jwt)` in the controller, never accepted from the client.
+  - Validation is split in two, deliberately: Jakarta bean validation on `UpdateRetryPolicyRequest`
+    covers each field's own range (`@DecimalMin`/`@Max` etc., matching Plan §5.6's table exactly), and
+    the pure `RetryPolicyValidator` covers what bean validation can't express — `extrasMin ≤ extrasMax`
+    together, and "this key isn't editable at this scope". A scope string that isn't
+    `GLOBAL`/`UNIT`/`LESSON`, or a GLOBAL PUT whose `scopeId` isn't the literal string `"GLOBAL"`, are
+    both rejected the same way (`RetryPolicyInvalidException`, 422, new `ErrorCode.Theory.RETRY_POLICY_INVALID`).
+  - **Known, deliberate gap, not silently dropped:** a PUT to a UNIT/LESSON `scopeId` that doesn't
+    correspond to any real `content_unit`/`content_lesson` row is not rejected — it simply never
+    resolves for any real lesson, exactly like the migration's own comment on why `scope_id` carries
+    no FK (a unit/lesson can be re-synced away without a stale policy row blocking that). Existence
+    validation at write time was consciously left out of scope here; worth a 404 check if an admin UI
+    for this ships later.
+- **Tests:**
+  - `RetryPolicyResolverTest` (pure, 7 tests): no-rows-at-all falls back to hardcoded defaults; a
+    GLOBAL-only override; UNIT overriding GLOBAL for one key while another key falls through
+    untouched; LESSON overriding both; rows for an unrelated unit/lesson are ignored; the exact
+    `BigDecimal` round-trip for `extras_per_wrong`; `difficulty_level_map` replaces wholesale.
+  - `RetryPolicyValidatorTest` (pure, 11 tests): every range/scope rule, including the two keys'
+    scope-eligibility in both directions (allowed and rejected) and the "at least one field" guard.
+  - `TheoryContentStoreTest` (+3 tests, real Postgres): the seeded GLOBAL row is readable; a new
+    scope/scopeId inserts; a second PUT to the same row **replaces** `key_values` wholesale rather than
+    merging (the specific behaviour the full-replace decision above depends on).
+  - `RetryPolicyServiceTest` (7 tests, real Postgres): a valid edit is readable afterward; GLOBAL with
+    a mismatched scopeId, an unknown scope string, `extrasMin > extrasMax`, and `similar_scope` at
+    LESSON scope all reject with `RetryPolicyInvalidException`; **a valid edit bumps the content
+    release** (`updatePolicy_validEdit_bumpsTheContentRelease`) — the tracker's own acceptance line
+    ("visible on a second instance within 30 s") is this test plus `ContentSnapshotProviderTest`'s
+    already-proven 30 s polling, composed rather than re-proven from scratch; and a full multi-key PUT
+    applies every provided key at once.
+  - `TheoryContentPlatformControllerTest` (+8 tests): 401/403/200 for both new endpoints, a
+    bean-validation 422 (`extrasPerWrong` out of its `@DecimalMax` range), and a service-level 422
+    (mocked `RetryPolicyInvalidException`) to prove both validation layers actually reach the HTTP
+    response as 422, not just internally.
+  - `ContentSnapshot`/`ContentSnapshotProvider`/`ContentSnapshotBuilder`'s existing tests updated for
+    the new constructor parameter — no behavioural change to any of them.
+  - Full suite: `./gradlew test` → **1519 passed, 31 skipped, 0 failures, 0 errors**.
+- **Deviations from the plan:** the surrogate-id `retry_policy` table (above); PUT = full replace
+  rather than merge (above); `updated_by` from the JWT, never the request body (above).
+- **Issues found / open risks:** the UNIT/LESSON `scopeId` existence gap noted above — deliberate, not
+  forgotten.
+- **Ready to continue:** YES.
+- **Next task:** P4.T2 (entitlement and unlock rules) — depends only on P4.T1, which is now done.

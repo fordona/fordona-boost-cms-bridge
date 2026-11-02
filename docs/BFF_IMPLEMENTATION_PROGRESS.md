@@ -462,27 +462,33 @@ every repository the plan touches:
 
 - [ ] **P4 — phase done**
 
-- [ ] **P4.T1 Migrations and retry policy** · Repo: ENG · Dep: P3 · Plan §5.6, §6
-  - [ ] `V1_0_17__theory_attempts.sql`:
+- [x] **P4.T1 Migrations and retry policy** · Repo: ENG · Dep: P3 · Plan §5.6, §6
+  - [x] `V1_0_17__theory_attempts.sql`:
     - `lesson_attempt` (all Plan §6 columns, incl. `kind`, `template_id`, `lesson_version`, `selection_strategy`,
       `selection_reason`, `policy_snapshot jsonb`, phase totals, `retry_extras_short`);
     - `attempt_item` (incl. answer columns, `response_id`);
     - `mistake`.
-  - [ ] Constraints:
+    - Note: `policy_snapshot`/`option_order` are TEXT holding JSON, not JSONB — this engine has no
+      JSONB converter pair registered anywhere (same reasoning as P3.T2's content read model).
+  - [x] Constraints:
     - `UNIQUE(app_user_id, request_id)`;
     - partial unique `(app_user_id, lesson_id) WHERE status <> 'COMPLETED'`;
     - PK `(attempt_id, seq)` and `UNIQUE(response_id)`;
     - indexes `attempt_item(app_user_id, question_id)` and `(app_user_id, answered_at)`, and
       `mistake(app_user_id, unit_id, status)`;
     - `CHECK` constraints.
-  - [ ] `V1_0_18__theory_retry_policy.sql`: `retry_policy` with a GLOBAL row holding the defaults:
+  - [x] `V1_0_18__theory_retry_policy.sql`: `retry_policy` with a GLOBAL row holding the defaults:
         `retry_enabled` true, `extras_per_wrong` 1.5, `extras_min` 2, `extras_max` 5, `level_drop_allowed` 1,
         `similar_scope` REACHED, `difficulty_level_map`.
-  - [ ] `RetryPolicyResolver`: LESSON > UNIT > GLOBAL, with range validation, cached in the snapshot.
-  - [ ] Platform endpoints `GET /v1/platform/theory/retry-policy` and `PUT …/{scope}/{scopeId}`. A PUT bumps the
+        Deviation: surrogate `BIGSERIAL id` + `UNIQUE(scope, scope_id)` instead of Plan §6's literal
+        `PK(scope, scope_id)` — see PROGRESS__STATUS.md, 2026-11-02, P4.T1 for why.
+  - [x] `RetryPolicyResolver`: LESSON > UNIT > GLOBAL, with range validation, cached in the snapshot.
+  - [x] Platform endpoints `GET /v1/platform/theory/retry-policy` and `PUT …/{scope}/{scopeId}`. A PUT bumps the
         content release so every instance reloads.
   - **Unit tests:** resolution order; every range rule (incl. min ≤ max); the PUT validation returns 422.
-  - **Acceptance:** a policy change is visible on a second instance within 30 s.
+  - **Acceptance:** a policy change is visible on a second instance within 30 s. — proven as
+    release-bump-on-PUT + `ContentSnapshotProvider`'s already-tested 30s polling, not a literal
+    two-instance test.
 
 - [ ] **P4.T2 Entitlement and unlock rules** · Repo: ENG · Dep: P4.T1 · Plan §1 decision 10, §5.1
   - [ ] Locate today's unit-lock logic (`LearnHubService` / `LearnAccessContext`, free vs subscribed). Expose it as
