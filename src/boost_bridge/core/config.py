@@ -63,9 +63,10 @@ class Settings(BaseSettings):
     # ``assetBaseUrl`` of its own. Defaults to ``{BOOST_BASE_URL}/assets``.
     boost_asset_base_url: AnyHttpUrl | None = None
     boost_connect_timeout: float = Field(default=2.0, gt=0)
-    boost_read_timeout: float = Field(default=5.0, gt=0)
-    boost_max_retries: int = Field(default=2, ge=0, le=5)
-    boost_total_budget: float = Field(default=8.0, gt=0)
+    # Plan §7.4/§9.1: "1.5 s per Boost call" — bounds p99 on a cold cache entry.
+    boost_read_timeout: float = Field(default=1.5, gt=0)
+    boost_max_retries: int = Field(default=1, ge=0, le=5)
+    boost_total_budget: float = Field(default=3.0, gt=0)
 
     # --- Storage -----------------------------------------------------------
     database_url: str = "postgresql+asyncpg://bridge:bridge@localhost:5432/boost_bridge"
