@@ -791,18 +791,18 @@ every repository the plan touches:
         budget).
   - **Unit tests:** the missing-required-value errors; startup refuses a missing engine token outside `local`.
 
-- [ ] **P6.T2 Engine client** · Repo: BFF · Dep: P6.T1, P5 · Plan §7.4
-  - [ ] An async httpx client with a keep-alive pool. Forwards the learner JWT, `X-Fordona-Internal-Token`,
+- [x] **P6.T2 Engine client** · Repo: BFF · Dep: P6.T1, P5 · Plan §7.4
+  - [x] An async httpx client with a keep-alive pool. Forwards the learner JWT, `X-Fordona-Internal-Token`,
         `Accept-Language`, `X-Timezone` and the correlation id. Unwraps `Payload<T>`.
-  - [ ] Passes engine RFC 7807 errors through unchanged (status, `errorCode`, `detail`, `correlationId`);
+  - [x] Passes engine RFC 7807 errors through unchanged (status, `errorCode`, `detail`, `correlationId`);
         `If-None-Match` / `ETag` / 304 pass through.
-  - [ ] Per-call timeouts (2 s; 5 s for phase completion). An engine outage → 503 `UPSTREAM_UNAVAILABLE`.
+  - [x] Per-call timeouts (2 s; 5 s for phase completion). An engine outage → 503 `UPSTREAM_UNAVAILABLE`.
   - **Unit tests (respx):**
-    - [ ] header forwarding;
-    - [ ] unwrapping;
-    - [ ] error passthrough;
-    - [ ] 304 passthrough;
-    - [ ] timeout → 503.
+    - [x] header forwarding;
+    - [x] unwrapping;
+    - [x] error passthrough;
+    - [x] 304 passthrough;
+    - [x] timeout → 503.
 
 - [ ] **P6.T3 Boost §13 client and body cache** · Repo: BFF · Dep: P2.T3 · Plan §7.4, §9.1, §13
   - [ ] Extend the Boost client:

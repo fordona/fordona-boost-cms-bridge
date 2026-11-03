@@ -2311,3 +2311,90 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   there is no behavioural risk to carry forward from this task specifically.
 - **Ready to continue:** YES.
 - **Next task:** P6.T2 (engine client) — depends on P6.T1 (now done) and P5 (done).
+
+### 2026-11-03 · P6.T2 · Engine client
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF (fordona-boost-cms-bridge) · feat/theory-app-implementations ·
+  544f01b
+- **What was done:**
+  - New `clients/engine/` package, structured in parallel with `clients/boost/` (models / errors /
+    client, same three-file split):
+    - `models.py`: `EnginePayload` (the `Payload<T>` success envelope — `code`, `status`, `message`,
+      untyped `response: Any`) and `EngineProblem` (the RFC 7807 problem body:
+      `type`/`title`/`status`/`detail`/`instance`/`errorCode`/`correlationId`). Both `extra="ignore"`
+      with `to_camel` aliasing, same tolerance stance as `BoostModel`. `response`/the problem's
+      business fields stay untyped here on purpose — a specific route's service layer (P6.T5)
+      validates `response` into its own schema; this client only unwraps the envelope.
+    - `errors.py`: `EnginePassthroughError(AppError)` — the one new error type this task needed.
+      Unlike Boost's client (whose failures the BFF classifies into its own generic messages via
+      `BoostNotFound`/`BoostUnavailable`/...), an engine failure already carries the exact body the
+      end client should see, so this error's `status_code`/`error_code`/`type_path` are set *per
+      instance* from the engine's own problem body, not fixed per class — the one place in this
+      codebase an `AppError` subclass's rendering fields vary at construction time rather than being
+      class attributes.
+    - `client.py`: `EngineClient` with `get`/`post`, `EngineResponse` (`data`, `etag`,
+      `not_modified`), and `create_http_client` (pooled `httpx.AsyncClient`, sized from
+      `engine_pool_max_connections`/`engine_read_timeout`, P6.T1's new settings).
+  - **Header forwarding:** `Authorization: Bearer <learner JWT>` (always the caller's own token —
+    reuses the existing `learner_token_var` contextvar Boost's forward-token mode already populates;
+    the engine has no service-token mode at all, unlike Boost), `X-Fordona-Internal-Token` (always,
+    from settings), `Accept-Language`/`X-Timezone` (only when the caller supplies them — left to
+    P6.T5's routes to read from the incoming request), `X-Correlation-ID` (from the same
+    `correlation_id_var` Boost already uses).
+  - **`correlationId` passthrough needs no special code.** The plan's wording ("passed through
+    unchanged: status, errorCode, detail, correlationId") reads as needing dedicated handling, but it
+    doesn't: this service's own `problem_body()` already stamps every response with
+    `get_correlation_id()`, and that's the *same* id this client forwards to the engine on the call
+    that produced the error — so the engine's own problem body necessarily already carries the id
+    the BFF response will carry regardless. Logged this rather than silently building (and testing)
+    machinery for a case that resolves itself by construction.
+  - **A timeout and a connection failure both become `UpstreamUnavailableError` (503), not two
+    different error types.** Boost's client keeps `BoostTimeout` and `BoostUnavailable` as genuinely
+    distinct cases, because Boost's retry loop treats them differently (a timeout still counts toward
+    the retry budget the same as a 5xx; `Retry-After` handling only applies to one of them). The
+    engine client has no retry requirement in this task at all, so there is nothing for a
+    distinction to drive — Plan §7.4's own wording is explicit here too ("an engine outage → 503
+    UPSTREAM_UNAVAILABLE"), and the tracker's own unit-test line says "timeout → 503," not 504. Using
+    the existing `UpstreamTimeoutError` (504) for a timeout here would have been carrying over
+    Boost's bucketing by habit rather than reading this task's own stated requirement.
+  - **An unparseable error body still needs a status-dependent fallback**, which the plan doesn't
+    spell out: a 403 from the engine's own `TheoryInternalTokenFilter` (a raw Spring Security
+    rejection, before `GlobalExceptionHandler` ever runs — confirmed against the actual filter code
+    in the engine repo during P4.T4) isn't RFC 7807 shaped at all. Falls back to
+    `UpstreamMisconfiguredError` (502) for an unparseable 4xx (our credential/setup is wrong — a BFF
+    bug, same bucket Boost's 401/403 rejections land in) and `UpstreamUnavailableError` (503) for an
+    unparseable 5xx (the engine is genuinely down, no body to blame on either side).
+  - **Not wired into `container.py`/`Services`.** `BoostClient` itself isn't wired in there either —
+    confirmed by grepping the whole `src/boost_bridge/` tree before starting this task — because
+    nothing has consumed it since it was built; the routes that will (P6.T5) are what actually wires
+    both clients in. Building and testing `EngineClient` standalone now, leaving the wiring to its
+    first real consumer, follows the exact precedent already set rather than wiring up an unused
+    dependency speculatively.
+- **Tests:** `tests/unit/test_engine_client.py` (17, respx-mocked, mirrors `test_boost_client.py`'s
+  structure and fixture style): every header forwarded correctly (and omitted when not supplied);
+  correlation id forwarded; `Payload<T>` unwrapped for both GET and POST (including the POST JSON
+  body itself being what was sent); a full RFC 7807 error body passes through with its exact
+  status/errorCode/detail/type (two cases: a 403 business-rule lock, a 404 not-found); an
+  unparseable 4xx body → `UpstreamMisconfiguredError`; an unparseable 5xx body →
+  `UpstreamUnavailableError`; a 304 passes through as `not_modified=True` with no exception and the
+  response's `ETag` preserved; `If-None-Match` is actually sent on the request; a 200's own `ETag`
+  header is preserved too; a timeout and a connection error both → `UpstreamUnavailableError`; a
+  non-JSON 200 and a 200 missing the `Payload<T>` envelope fields both → `UpstreamUnavailableError`;
+  no learner token in context → `UpstreamMisconfiguredError` with zero calls made; the
+  `timeout_override` parameter (for the future phase-completion route) is actually honoured by the
+  underlying request.
+  - Full gate: `uv run pytest -q` → 355 passed, 52 skipped (17 new, same Docker-skip baseline as
+    P6.T1); `uv run ruff check .` / `uv run ruff format --check .` → clean; `uv run mypy src scripts`
+    → clean on 61 source files; `uv run lint-imports --config pyproject.toml` → the
+    `boost_bridge`/`boost_stub` independence contract still kept (this task never touches
+    `boost_stub`, but re-ran it anyway since it's part of this repo's own CI gate).
+- **Deviations from the plan:** none beyond the documented decisions above (the single-bucket
+  timeout/connection-failure mapping, and the unparseable-body status-dependent fallback) — both read
+  directly off the plan's own wording and this task's own test-list line, not guessed.
+- **Issues found / open risks:** none new. The client has no consumer yet (P6.T5 is the first), so
+  there is no behavioural risk to carry forward from this task specifically — the same note P6.T1's
+  entry made about its own settings.
+- **Ready to continue:** YES.
+- **Next task:** P6.T3 (Boost §13 client and body cache) — depends on P2.T3 (check its status before
+  starting; this session has not touched Boost-side work yet).
