@@ -754,10 +754,12 @@ every repository the plan touches:
     - [x] locked unit 2 with `lockReason: SUBSCRIPTION`.
   - **Acceptance:** a ~150-lesson fixture serialises to ≤ 30 KB.
 
-- [ ] **P5.T6 Readiness endpoint** · Repo: ENG · Dep: P5.T3 · Plan §5.7, §7.3
-  - [ ] `GET /internal/theory/v1/readiness`:
+- [x] **P5.T6 Readiness endpoint** · Repo: ENG · Dep: P5.T3 · Plan §5.7, §7.3
+  - [x] `GET /internal/theory/v1/readiness`:
     - `percent = round(100 × sum_best_accuracy / visible lessons)`;
-    - `completedLessons`, `totalLessons`, `averageBestAccuracy`;
+    - `completedLessons`, `totalLessons`, `averageBestAccuracy` (**decision, logged**: divides by
+      `completedLessons`, not `totalLessons` — see status log for why the plan's own example numbers
+      only work under two different denominators);
     - per-unit values with the same formula.
   - **Tests:** zero progress → 0; full marks → 100; a new lesson published lowers the percent; per-unit sums are
     consistent.

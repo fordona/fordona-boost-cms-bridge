@@ -2072,3 +2072,52 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   `recordAttemptStarted` non-atomicity; P5.T4's partial-failure ETag fallback.
 - **Ready to continue:** YES.
 - **Next task:** P5.T6 (readiness endpoint) — depends on P5.T3 (done). Plan §5.7, §7.3.
+
+### 2026-11-03 · P5.T6 · Readiness endpoint
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 517efd5f
+- **What was done:**
+  - `GET /internal/theory/v1/readiness` → `ReadinessService.getReadiness`. One `lesson_progress` range
+    scan (`ProgressStore#findAllLessonProgress`, already built in P5.T4), walked against the snapshot's
+    units/lessons to build both the overall and per-unit figures in a single pass:
+    `percent = round(100 × Σ best_accuracy / totalLessons)`, `completedLessons`, `totalLessons`, and
+    per-unit `ReadinessUnitDTO(unitId, displayIndex, title, percent, completedLessons, totalLessons,
+    locked)` — matching the plan's own per-unit example shape (no `lockReason` field there, unlike the
+    learning path's unit object, which does carry one).
+  - **A genuine, logged decision: `averageBestAccuracy` divides by `completedLessons`, not
+    `totalLessons`.** Plan §5.7 only gives the formula for `percent`; `averageBestAccuracy` is
+    mentioned once, in the §7.3 example response, with no formula at all. The example's own numbers —
+    `percent: 13` against `completedLessons: 3`, `totalLessons: 23`, `averageBestAccuracy: 0.81` — only
+    make sense under two different denominators: `percent` is a completion-weighted score over the
+    *whole course* (so finishing more of it always raises the number, even if quality is mediocre, per
+    Plan §5.7's own "It rewards both coverage and quality" framing for the top-level readiness metric),
+    while `averageBestAccuracy` reads as "how well am I doing on what I've actually done" — `Σ
+    best_accuracy / completedLessons`. Checked the arithmetic doesn't fit any single-denominator
+    reading (0.81 × 23 ≈ 18.6, giving `percent` ≈ 81, not 13; 0.81 × 3 ≈ 2.43, giving `percent` ≈ 11,
+    close to 13 within illustrative rounding) — confirms the two-denominator reading is the only one
+    that roughly reconciles the example's own numbers. Logged rather than guessed silently past.
+  - **Recomputes `sum_best_accuracy` fresh from the `lesson_progress` scan, not from the cached
+    `learner_theory_summary.sum_best_accuracy`.** The per-unit breakdown has no per-unit running total
+    anywhere (only the one global summary field exists), so it needs the full scan regardless; deriving
+    the overall figure from that same scan, rather than mixing a pre-aggregated field with a fresh
+    per-unit computation, guarantees the two can never read as inconsistent with each other. This
+    endpoint is also not on home's/the learning path's tight query-budget list in Plan §7.3, so the
+    extra read is a reasonable cost for that guarantee.
+- **Tests:**
+  - `ReadinessServiceTest` (5, real Postgres, same per-test-own-snapshot pattern as the other theory
+    service tests): no progress → `percent = 0`; every lesson perfect → `percent = 100` and
+    `averageBestAccuracy = 1.00`; publishing a new, never-completed lesson lowers the percent (adds to
+    `totalLessons` without adding to the accuracy sum); per-unit `completedLessons`/`totalLessons` sums
+    match the overall totals exactly; an unentitled unit is `locked` in the per-unit breakdown.
+  - `TheoryReadinessInternalControllerTest` (2, `@WebMvcTest`): missing internal token → 403; a valid
+    request returns 200 with the expected fields, including the example's own `0.81` average.
+  - Full suite: `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** the `averageBestAccuracy` denominator decision above — logged, not
+  silent.
+- **Issues found / open risks:** none new. Carried forward, unrelated to this task: `levelDropAllowed`
+  (P4.T6); the two P4.T8 deviations; P5.T3's `recordAttemptStarted` non-atomicity; P5.T4's
+  partial-failure ETag fallback.
+- **Ready to continue:** YES.
+- **Next task:** P5.T7 (completion responses carry `next` and `progress`) — depends on P5.T4 and P5.T5
+  (both done). Plan §7.3.
