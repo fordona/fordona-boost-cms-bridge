@@ -32,8 +32,11 @@ USER app
 EXPOSE 8000
 
 # One worker per container: scale horizontally with replicas, not processes.
-# Railway/compose run `alembic upgrade head` as a pre-deploy step, not here.
-CMD ["sh", "-c", "uvicorn boost_bridge.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --no-access-log"]
+# `alembic upgrade head` runs here, before uvicorn starts, so platforms with no
+# separate pre-deploy step (a single-container "Application" on Dokploy, say)
+# still migrate safely — it's a no-op once the DB is already current, so
+# running it on every container start (incl. every replica) is harmless.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn boost_bridge.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --no-access-log"]
 
 # ---- boost-stub ---------------------------------------------------------------
 # The Boost stub (plan §4.5): a separate deployable, dev and staging only. It
