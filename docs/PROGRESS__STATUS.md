@@ -2584,3 +2584,124 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Next task:** P6.T5 (public routes) — depends on P6.T2 and P6.T4 (both now done). This is the first
   task that actually wires `EngineClient`, `BodyCache`, and `AssetUrlResolver`/`render_blocks` into
   `container.py` and real `/v1/**` routes — the first task in P6 that produces a working endpoint.
+
+### 2026-11-03 · P6.T5 · Public routes
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF (fordona-boost-cms-bridge) · feat/theory-app-implementations ·
+  7ab27db
+- **What was done:**
+  - Read the real engine source directly (not just the plan prose) before writing the client: every
+    `io.fordona.engine.learn.theory.api.dto` record and the two theory controllers
+    (`TheoryAttemptInternalController`, plus Home/LearningPath/Readiness), to get field names, Jackson
+    naming (plain camelCase except `HomeDTO.continueCard` → `"continue"` via `@JsonProperty`), and the
+    exact two-layer auth (JWT + `X-Fordona-Internal-Token`, a raw filter, not `@PreAuthorize`) right
+    the first time rather than guessing from the plan's JSON examples alone.
+  - New `clients/engine/theory.py`: `EngineTheoryClient` wrapping `EngineClient` (P6.T2) with one typed
+    method per internal endpoint (`get_home`, `get_learning_path`, `get_readiness`, `get_lesson_state`,
+    `start_attempt`, `get_attempt`, `answer`, `complete_lesson_phase`, `complete_retry_phase`), plus
+    every engine DTO mirrored field-for-field as an `EngineModel`.
+  - New `schemas/theory.py`: the full public contract (Home*, LearningPath*, Readiness*, LessonDetailOut,
+    AttemptOut/ItemOut/OptionOut, ResponseFeedbackOut, the two phase-completion shapes,
+    StartAttemptIn/AnswerIn) plus `AttemptRefCache`'s pure counterpart in `cache/attempt_refs.py`.
+  - New `services/theory_mappers.py` (pure, no I/O — unit-tested directly) and `services/theory_service.py`
+    (orchestrates engine + `BodyCache` + `AssetUrlResolver`, one engine call per route).
+  - New `api/routes/theory_home.py`, `theory_lessons.py`, `theory_attempts.py`, mounted at `/v1` in
+    `main.py`, plus `api/responses.py` (recreated — deleted in P1.T1's retirement) documenting Plan
+    §7.3's own error-code table per route.
+  - `container.py` now builds `BoostClient`, `EngineClient`/`EngineTheoryClient`, `BodyCache`,
+    `AttemptRefCache` and `AssetUrlResolver` and wires them into a `TheoryService` on `Services` — the
+    first task to actually consume what P6.T1–T4 built unwired.
+  - **Three plan-vs-engine-DTO gaps found by reading the engine source, not assumed** — each is a
+    genuine mismatch between Plan §7.3's own worked examples and what the already-shipped,
+    already-tested engine DTOs actually carry:
+    1. **Resume's `answered` shape — asked the owner mid-task (`AskUserQuestion`), not guessed.**
+       The plan's example shows resume returning the full feedback object
+       (`selectedOptionKey`/`correctOption`/`explanation`) for an answered item. The engine's
+       `AttemptItemRefDTO` (verified by reading the record and `AttemptItemModel`) has only a boolean
+       `answered` — the richer data is stored server-side (`selectedOptionKey`, `isCorrect`) but never
+       exposed, and `correctOptionKey` isn't stored at all (re-derived only at grading time in
+       `AttemptService#answer`). Options put to the owner: (a) ship `answered` as a plain boolean now,
+       (b) extend the engine's DTO and re-derive grading output for every answered item on resume (new
+       engine-side work, outside this task's BFF-only scope), (c) stop and write a bare BLOCKED entry.
+       **Chosen: (a).** Revisit if the engine ever adds that field.
+    2. **`displayIndex` has no source on two routes.** Neither `AttemptDTO` nor `LessonStateDTO` carries
+       it (confirmed by reading both records) — only `HomeDTO`/`LearningPathDTO` do, and calling either
+       of those would break the one-engine-call-per-route budget the plan's own table sets. Decided
+       without asking again (a presentational omission, not a security/correctness question like #1):
+       `displayIndex` is omitted from `AttemptOut`/`ItemOut` and `null` on `LessonDetailOut`. The app
+       already has it from the screen it navigated from (home or the learning path).
+    3. **`POST /v1/lessons/{lessonId}/attempts` always answers 200, never 201.** The plan's example
+       shows "201, or 200 for a replay/resume." `TheoryAttemptInternalController#startAttempt` has no
+       `@ResponseStatus` and always 200s (confirmed by reading the controller) — it carries no
+       create-vs-resume signal this route could use. Decided without asking again (a status-code
+       nuance with no behavioural consequence for the app, which reads the body either way): always 200.
+  - **One structural inference, not a guess:** `AttemptDTO.items` is one flat list — there is no
+    separate `retry` field on the DTO the way the phase-completion response has one. Each item carries
+    its own `phase` ("LESSON"/"RETRY"), so `TheoryService._build_attempt_out` partitions the flat list
+    by that field to build the public `items`/`retry` split the plan's resume example shows. This isn't
+    a plan/engine mismatch requiring a decision — the per-item `phase` field exists precisely to make
+    this split possible, and no other reading of the data model fits the documented shape.
+  - **New state the plan didn't call out: `AttemptRefCache` (Redis, no TTL override — reuses
+    `RedisCache`'s own hard TTL).** `POST .../responses` needs a `seq`'s `(questionId, version)` to find
+    `correctOption.content` in the body cache, but the engine's `AnswerFeedbackDTO` carries no question
+    id at all (confirmed by reading the record) — only `seq`. Every place item refs are hydrated
+    (start, resume, phase-complete's retry items) now also remembers `seq → (questionId, version)` in
+    this cache; `answer()` reads it, and a cold cache (eviction, or a restart in between) costs one
+    extra `GET /attempts/{attemptId}` call to repopulate rather than ever resolving against the wrong
+    question's body. This keeps the plan's "one engine call per route" true for the common case without
+    ever trading it for correctness.
+  - A missing cached body for any item in an attempt (Boost itself reports it `missing[]`, not a
+    transient failure) raises `ContentNotFoundError` for the whole hydration rather than silently
+    dropping the item — a dropped item would desync the client's `seq` numbering against what the
+    engine's ledger expects, which is worse than a clean failure.
+  - Updated `tests/api/test_retired_routes.py`: `/v1/lessons/{lessonId}` is no longer retired (it kept
+    its path, P6.T5 gives it its new, entitlement-checked meaning); the route-table test now pins the
+    full 9-endpoint public surface + health, matching the task's own acceptance criterion exactly.
+  - Updated `tests/api/test_auth_boundary.py::test_openapi_schemas_carry_no_answer_fields`: narrowed
+    rather than weakened. It used to ban the word `explanation` from every OpenAPI schema outright
+    (written when no legitimate answer flow existed); `ResponseFeedbackOut.explanation` is now a
+    legitimate, documented post-answer field (a block array). The test still bans `correctOptionId`
+    everywhere and now additionally asserts `explanation` is never **string**-typed anywhere — the
+    actual invariant it was protecting (Boost's own raw `explanation` string field, visible in
+    `tests/factories.py::question_payload`'s `"SECRET explanation"`, must never reach a public schema).
+  - Extended `tests/conftest.py`'s `harness_factory` to build the real `TheoryService` (Boost client,
+    `EngineClient`, `BodyCache`, `AttemptRefCache`, `AssetUrlResolver`) against `fakeredis` and respx-
+    mocked `ENGINE`/`BOOST` hosts, mirroring `container.build_services` — API tests exercise the whole
+    stack, not a stub.
+- **Tests:**
+  - `tests/unit/test_theory_mappers.py` (9): home mapping tolerates the partial-failure
+    (week/streak/readiness all `None`); item hydration orders options by `optionOrder` with A/B/C/D
+    labels and marks `answered`; hydration raises `ContentNotFoundError` for a missing question body or
+    an option id not present in the cached body; `correct_option_content` finds/raises correctly;
+    `item_refs_by_seq` and `parse_explanation_blocks` (tolerant of an unknown block type) each do their
+    one job.
+  - `tests/api/test_theory_home.py`, `test_theory_learning_path.py`, `test_theory_readiness.py`,
+    `test_theory_lessons.py`, `test_theory_attempts.py` (new, full stack via `respx`): happy path per
+    route; `X-Timezone`/`X-Fordona-Internal-Token` forwarded to the engine; learning-path ETag/304
+    relay; a locked lesson is 403 with **zero** Boost calls (both lock reasons); an engine 404 passes
+    through unchanged; start/resume hydrate items with correctly labelled, ordered options and no leaked
+    keys; `GET /v1/attempts/{attemptId}` splits a flat `items` list into `items`/`retry` by phase;
+    `answer()` resolves `correctOption.content` from the attempt-ref-cache-pointed body; both phase
+    completions hydrate retry items / pass `next`/`progress` through; a recursive key search
+    (`_assert_no_leaked_keys`) on every one of these responses for `questionId`/`version`/
+    `correctOptionKey`/`templateId` — the tracker's own explicit acceptance bullet.
+  - Full gate: `uv run pytest -q` → 415 passed, 52 skipped (22 new); `uv run ruff check .` /
+    `uv run ruff format --check .` → clean; `uv run mypy src scripts` → clean on 74 source files;
+    `uv run lint-imports --config pyproject.toml` → the `boost_bridge`/`boost_stub` contract still kept.
+- **Deviations from the plan:** the three logged gaps above (resume's `answered` shape — confirmed with
+  the owner; `displayIndex` omission; always-200 on attempt start) and the `retry`-split structural
+  inference. None are guesses made past silently — each is logged here with its reasoning and, for the
+  one with real product/security weight, the owner's explicit choice among named alternatives.
+- **Issues found / open risks:**
+  - If the engine ever exposes richer per-item feedback on resume (deviation #1's "revisit" case), both
+    `schemas/theory.py::ItemOut.answered` and `clients/engine/theory.py::EngineAttemptItemRef` need to
+    change together; search for the "BFF ships boolean-only for now" comment trail.
+  - `AttemptRefCache` shares `RedisCache`'s hard TTL (`CACHE_HARD_TTL_SECONDS`, default 24 h) with every
+    other cached entity. An attempt left open longer than that falls back to the one-extra-engine-call
+    path on its next answer, which is correct but not free; revisit only if that TTL ever needs to
+    differ per use.
+  - `/v1/lessons/{lessonId}`'s rate-limit tier isn't addressed here — that's P6.T6.
+- **Ready to continue:** YES.
+- **Next task:** P6.T6 (rate limiting) — a per-learner Redis token bucket, separate read/write buckets,
+  429 RFC 7807 with `Retry-After`. Depends on P6.T5 (now done).

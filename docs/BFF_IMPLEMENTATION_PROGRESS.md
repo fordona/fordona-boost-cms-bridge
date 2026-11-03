@@ -835,34 +835,52 @@ every repository the plan touches:
     - [x] free-unit plain URLs;
     - [x] cached bodies contain no signed URL.
 
-- [ ] **P6.T5 Public routes** · Repo: BFF · Dep: P6.T2, P6.T4 · Plan §7.3 (endpoint table)
-  - [ ] `GET /v1/home`: engine passthrough (+ icon URLs).
-  - [ ] `GET /v1/learning-path`: passthrough with ETag/304.
-  - [ ] `GET /v1/readiness`.
-  - [ ] `GET /v1/lessons/{lessonId}`:
+- [x] **P6.T5 Public routes** · Repo: BFF · Dep: P6.T2, P6.T4 · Plan §7.3 (endpoint table) — DONE (2026-11-03):
+  415 passed, 52 skipped; ruff check/format and mypy clean; lint-imports kept. Three logged, owner-facing
+  deviations from the plan's own examples (engine DTOs don't carry what the examples show) — see
+  `PROGRESS__STATUS.md`'s P6.T5 entry — plus one decision confirmed with the owner mid-task (resume's
+  `answered` shape).
+  - [x] `GET /v1/home`: engine passthrough (+ icon URLs — none to resolve today, engine's own iconUrl is
+        always null).
+  - [x] `GET /v1/learning-path`: passthrough with ETag/304.
+  - [x] `GET /v1/readiness`.
+  - [x] `GET /v1/lessons/{lessonId}`:
     - engine lesson state;
-    - **if locked, return the 403 without fetching theory**;
+    - **if locked, return the 403 without fetching theory** — confirmed by test, no Boost call made;
     - otherwise the lesson revision blocks from cache/Boost;
-    - compose the response.
-  - [ ] `POST /v1/lessons/{lessonId}/attempts` and `GET /v1/attempts/{attemptId}`: engine refs → hydrated items:
+    - compose the response. `displayIndex` is `null` — not on `LessonStateDTO`/`BoostLesson`, and the
+      only engine calls that carry it (home, learning-path) are outside this route's 1-call budget.
+  - [x] `POST /v1/lessons/{lessonId}/attempts` and `GET /v1/attempts/{attemptId}`: engine refs → hydrated items:
     - `prompt` blocks;
     - `options` ordered by `optionOrder` with labels A–D;
     - **drop `questionId`/`version`**;
-    - `answered` feedback on resume;
-    - `retry` items when `IN_RETRY`.
-  - [ ] `POST /v1/attempts/{attemptId}/responses`: engine feedback + `correctOption.content` from the cached body +
-        explanation blocks with resolved URLs.
-  - [ ] `POST …/phases/lesson/complete` and `…/retry/complete`: hydrate the retry items; pass `next` / `progress`
+    - `answered` is a **plain boolean** on resume, not the feedback object the plan's example shows —
+      owner decision (asked mid-task): the engine's `AttemptItemRefDTO` has no
+      `selectedOptionKey`/`correctOptionKey`/explanation for an already-answered item (stored but never
+      exposed, and `correctOptionKey` isn't stored at all — it's re-derived only at grading time).
+      Revisit if the engine ever adds that field;
+    - `retry` items when `IN_RETRY` — `AttemptDTO.items` is one flat list with no separate `retry` field,
+      so this is built by partitioning on each item's own `phase`, not an engine change;
+    - `lessonId` is `null` on `GET /v1/attempts/{attemptId}` (no source without a second engine call);
+      `POST /v1/lessons/{lessonId}/attempts` always answers **200**, never 201 — `startAttempt` has no
+      create-vs-resume signal to pick between them.
+  - [x] `POST /v1/attempts/{attemptId}/responses`: engine feedback + `correctOption.content` from the cached body +
+        explanation blocks with resolved URLs. A new Redis-backed `AttemptRefCache` remembers each
+        attempt's `seq → (questionId, version)` at hydration time (the engine's `AnswerFeedbackDTO` carries
+        no question id at all); a cold cache costs one extra `GET` attempt call rather than ever resolving
+        the wrong body.
+  - [x] `POST …/phases/lesson/complete` and `…/retry/complete`: hydrate the retry items; pass `next` / `progress`
         through.
-  - [ ] Request validation: UUID formats for `requestId` / `responseId`; `selectedOptionKey` non-empty;
+  - [x] Request validation: UUID formats for `requestId` / `responseId`; `selectedOptionKey` non-empty;
         `durationMs ≥ 0`.
   - **Unit tests (respx engine + Boost):**
-    - [ ] every route's shape matches Plan §7.3 (JSON schema tests);
-    - [ ] no public response ever contains `questionId`, `version`, `correctOptionKey` before an answer, or any
-          template id (a recursive key search in tests);
-    - [ ] a locked lesson makes no Boost call;
-    - [ ] option order and labels.
-  - **Acceptance:** the OpenAPI document at `/openapi.json` lists exactly the 9 public endpoints (+ health).
+    - [x] every route's shape matches Plan §7.3 (happy-path JSON assertions per route, `tests/api/test_theory_*.py`);
+    - [x] no public response ever contains `questionId`, `version`, `correctOptionKey` before an answer, or any
+          template id (a recursive key search in tests, `test_theory_attempts.py::_assert_no_leaked_keys`);
+    - [x] a locked lesson makes no Boost call;
+    - [x] option order and labels.
+  - **Acceptance:** `test_route_table_matches_the_public_surface` pins the OpenAPI document at `/openapi.json`
+        to exactly the 9 public endpoints + health.
 
 - [ ] **P6.T6 Rate limiting** · Repo: BFF · Dep: P6.T5 · Plan §7.3
   - [ ] A per-learner (JWT `sub`) Redis token bucket. Read routes use `RATE_LIMIT_READ_PER_MINUTE`; write routes
