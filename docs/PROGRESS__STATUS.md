@@ -2398,3 +2398,103 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P6.T3 (Boost §13 client and body cache) — depends on P2.T3 (check its status before
   starting; this session has not touched Boost-side work yet).
+
+### 2026-11-03 · P6.T3 · Boost §13 client and body cache
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF (fordona-boost-cms-bridge) · feat/theory-app-implementations ·
+  236abd5. P2.T3 (Boost stub service) was confirmed already done before starting.
+- **What was done:**
+  - `BoostRequests` gains two new factory methods, in the exact style the existing ones already use:
+    - `lesson_revision(lesson_id, version, locale)` → `/v1/delivery/lessons/{id}/revisions/{version}`,
+      parsed as `BoostLesson` (same entity shape as the existing un-pinned `lesson()` call — only the
+      path changes, to pin an exact immutable version).
+    - `question_revisions_batch(refs, locale)` → `/v1/delivery/questions/revisions?refs={id}:{version},…`,
+      parsed as a new `BoostBatchResponse[BoostQuestion]` (`{items, missing}` — never fails the whole
+      call for one bad ref, per §13.2). Raises `ValueError` client-side for more than
+      `MAX_BATCH_REFS` (100) refs, so a caller that forgets to chunk fails fast and locally rather than
+      waiting on a confusing 422 from Boost.
+    - **Deliberately not implemented: endpoint 6, the grading-scope batch.** The tracker's own P6.T3
+      bullets only name "the lesson revision" and "the question batch" (both delivery-scope), and
+      CLAUDE.md's security invariant #1 is explicit: "the grading token and `/v1/grading/**` are never
+      reachable from the BFF." Implementing endpoint 6 even as dead code would be adding a capability
+      this service is specifically designed never to have.
+  - New content-block models (Plan §4.6/§13.4) in `clients/boost/models.py`: `TextBlock`, `ImageBlock`,
+    `AnimationBlock`, `VideoBlock` (with a new `VideoCaption` sub-model, flagged `UNVERIFIED` — no real
+    payload captured yet, same honesty convention the file's own docstring already uses for
+    `assetBaseUrl`), `AudioBlock`, `RuleCardBlock`, and `UnknownBlock` (a bare `{type: str}` fallback).
+    `ContentBlock` is a `Union` with `union_mode="left_to_right"`, trying each known block type in
+    order and falling through to `UnknownBlock` for anything that doesn't match (an unrecognised type,
+    or even a recognised type with a malformed/incomplete body) — §4.6 says "an unknown block type is
+    skipped by the app," which only works if parsing one doesn't crash the whole response first; which
+    layer actually *drops* it is explicitly left to P6.T4 (block rendering), not this task.
+  - Extended `LessonTranslation` (`blocks`), `QuestionTranslation` (`prompt`), and `QuestionOption`
+    (`blocks`, and `text` changed from required to optional) with the new §13.4 fields, alongside the
+    existing `contentHtml`/`questionText`/`options[].text` fields, which stay untouched — both old and
+    new shapes can appear in the same response simultaneously per the plan's own "stay for existing
+    consumers" wording. Also added `QuestionShared.topic_key` (new in §13.4's example).
+  - **Explanation blocks are still not modelled anywhere.** The "Grading revision" shape in §13.4
+    (which carries `correctOptionId`/`explanation`) belongs to the grading-only batch endpoint this
+    task deliberately doesn't implement — consistent with the file's own existing answer-free-by-design
+    rule, not a new decision.
+  - New `services/body_cache.py` (`BodyCache`), modelled after `ContentCache` but deliberately much
+    simpler, because the two cache genuinely different things:
+    - `get_lesson_revision(lesson_id, version, locale)`: Redis-first, fetch-and-cache-forever on a
+      miss, `ContentNotFoundError` on a 404, the shared `to_app_error` mapping (see below) otherwise.
+    - `get_question_revisions(refs, locale)`: checks every ref against Redis first (zero Boost calls if
+      everything's cached), then fetches only the misses in as few `question_revisions_batch` calls as
+      fit within a configurable `batch_max_refs` (wired to `BOOST_BATCH_MAX_REFS` from P6.T1), caching
+      each fetched item **under the version Boost actually returned**, not the version requested (a
+      genuine distinction a test caught: these are expected to be the same in practice, but the cache
+      key should reflect ground truth, not the request). A ref Boost's own `missing[]` names is logged
+      (`boost_question_revision_missing`) and returned to the caller as still-missing, rather than
+      silently dropped inside this cache — deciding what an attempt does about a hole in its own
+      question set belongs to whatever calls this (P6.T5), not the cache.
+    - **No TTL, no stale-while-revalidate, no Postgres snapshot fallback — and no negative caching for
+      a `missing[]` ref either.** Every one of those exists in `ContentCache` to handle *mutable* list
+      content going stale or temporarily unavailable; a body cache entry is either exactly right
+      forever or doesn't exist yet, so none of that machinery has anything to do. A `missing[]` ref is
+      also deliberately **not** cached as a negative entry: unlike a genuine 404 (unpublished, stays
+      unpublished until a human republishes it), `missing[]` on a batch call could just mean "not
+      replicated to this read replica yet" — caching that as a negative result risks baking in a
+      transient gap. The tracker's own test list doesn't ask for negative caching here either.
+    - New `RedisCache.set_forever` (no `ex=` argument at all, vs. the existing `set`'s always-ttl'd
+      write) and a new `body_cache_key(entity, id, version, locale)` — a direct, un-hashed compound
+      key (unlike `cache_key`'s digest, which exists to fold an entire query's params into one short
+      string; a 4-tuple needs no hashing to stay short and collision-free).
+  - **Extracted `clients/boost/errors.to_app_error`** out of `content_cache.py`'s own private
+    `_to_app_error`, now a public, shared function both `ContentCache` and `BodyCache` call — the exact
+    same `BoostMisconfigured`/`BoostTimeout`/`BoostUnavailable` → `Upstream*Error` three-way mapping
+    was about to be written a second time verbatim; refactored `content_cache.py` to call the shared
+    version instead of carrying its own copy, with no behavioural change (confirmed by its own existing
+    25 tests still passing unmodified).
+- **Tests:** `tests/unit/test_body_cache.py` (13, respx + fakeredis, mirroring both
+  `test_boost_client.py`'s respx style and `test_content_cache.py`'s fakeredis fixtures): a fully
+  cached ref makes zero Boost calls; a mixed hit/miss fetches only the missing ref in exactly one batch
+  call (and the `refs` query param only names that one ref); the fetched item is cached under its
+  *returned* version with no TTL (`redis.ttl(key) == -1`); a `missing[]` ref is dropped from the
+  result and returned as still-missing, not silently discarded; fully-cached refs are served even
+  while Boost is unreachable (zero calls made to a route mocked to fail); an uncached ref with Boost
+  down (connection error, and separately a rejecting 503) both raise `UpstreamUnavailableError`; more
+  refs than `batch_max_refs` split into `ceil(n / max)` calls; an empty ref list makes no call at all;
+  and four parallel tests for the lesson revision path (cache hit, cache miss + cache-forever, 404 →
+  `ContentNotFoundError`, Boost down → `UpstreamUnavailableError`).
+  - Full gate: `uv run pytest -q` → 368 passed, 52 skipped (13 new; `test_content_cache.py`'s existing
+    25 and `test_boost_client.py`'s existing 24 both still green after the shared-error-function and
+    optional-`text`-field changes); `uv run ruff check .` / `uv run ruff format --check .` → clean;
+    `uv run mypy src scripts` → clean on 62 source files; `uv run lint-imports --config pyproject.toml`
+    → the `boost_bridge`/`boost_stub` independence contract still kept.
+- **Deviations from the plan:** none beyond the documented decisions above (the version-actually-
+  returned caching key, no negative caching for `missing[]`, and deliberately not implementing the
+  grading batch endpoint) — all read directly off the plan's own wording or this codebase's existing
+  security invariants, not guessed.
+- **Issues found / open risks:**
+  - `VideoCaption`'s shape (`{locale, fileId}`) is flagged `UNVERIFIED` — no real Boost payload with a
+    video block has been captured yet (same caveat class as the file's pre-existing `assetBaseUrl`
+    note). Whoever builds P6.T4's actual video rendering should re-check this against a real payload
+    the first chance one is available.
+  - `BodyCache` has no consumer yet (P6.T5 is the first, same as `EngineClient` after P6.T2) — no
+    behavioural risk to carry forward from this task specifically.
+- **Ready to continue:** YES.
+- **Next task:** P6.T4 (block rendering and media URLs) — depends on P6.T3 (now done) and P0.T2 (O-10,
+  check its status before starting).

@@ -804,20 +804,20 @@ every repository the plan touches:
     - [x] 304 passthrough;
     - [x] timeout → 503.
 
-- [ ] **P6.T3 Boost §13 client and body cache** · Repo: BFF · Dep: P2.T3 · Plan §7.4, §9.1, §13
-  - [ ] Extend the Boost client:
+- [x] **P6.T3 Boost §13 client and body cache** · Repo: BFF · Dep: P2.T3 · Plan §7.4, §9.1, §13
+  - [x] Extend the Boost client:
     - the lesson revision;
     - the question batch (chunks of 100, `missing[]`);
     - models for blocks and the new fields.
-  - [ ] Redis cache keyed `(entity, id, version, locale)` with **no TTL** (immutable). A cache miss for an attempt
+  - [x] Redis cache keyed `(entity, id, version, locale)` with **no TTL** (immutable). A cache miss for an attempt
         loads all missing refs in **one batch call**.
-  - [ ] **Never model answer fields** (keep the existing rule): grading is not reachable from the BFF.
+  - [x] **Never model answer fields** (keep the existing rule): grading is not reachable from the BFF.
   - **Unit tests:**
-    - [ ] cache hit makes no Boost call;
-    - [ ] a mixed hit/miss makes one batch call;
-    - [ ] `missing[]` → item dropped + logged;
-    - [ ] Boost down + cached → served;
-    - [ ] Boost down + not cached → 503.
+    - [x] cache hit makes no Boost call;
+    - [x] a mixed hit/miss makes one batch call;
+    - [x] `missing[]` → item dropped + logged;
+    - [x] Boost down + cached → served;
+    - [x] Boost down + not cached → 503.
 
 - [ ] **P6.T4 Block rendering and media URLs** · Repo: BFF · Dep: P6.T3, P0.T2 (O-10) · Plan §4.6, §9.5
   - [ ] Map Boost blocks to the public block shapes in Plan §7.3: image `url`/`srcset`, video `hlsUrl`/`posterUrl`/
