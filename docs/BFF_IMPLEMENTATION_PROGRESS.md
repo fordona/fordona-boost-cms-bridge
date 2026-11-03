@@ -916,13 +916,23 @@ every repository the plan touches:
 
 - [ ] **P7 — phase done**
 
-- [ ] **P7.T1 Concurrency suite (engine, Testcontainers)** · Repo: ENG · Dep: P5 · Plan §14.2
-  - [ ] double start → 1 attempt;
-  - [ ] double answer → replay or 409;
-  - [ ] double phase-complete → same summary;
-  - [ ] two devices completing at once → serialised;
-  - [ ] the streak counted once per local day under concurrent completions.
-  - **Acceptance:** green 10 runs in a row (no flakiness).
+- [x] **P7.T1 Concurrency suite (engine, Testcontainers)** · Repo: ENG · Dep: P5 · Plan §14.2 — DONE
+  (2026-11-03): double start and double-different-answer already existed; added the other three.
+  Found (and fixed the *test*, not production code for — see status log) a harness gap: asserting
+  "same summary" against `AttemptServiceTest`'s manually-constructed, non-proxied `AttemptService`
+  reproduced a real race (a `DuplicateKeyException`) that only exists because `new AttemptService(...)`
+  strips the `@Transactional` AOP proxy — the real app always calls through the proxy. A new
+  `AttemptServiceConcurrencyTest` autowires the real bean for that one assertion instead.
+  - [x] double start → 1 attempt (pre-existing);
+  - [x] double answer → replay or 409 (pre-existing: different responseId/option → 409; new: identical
+        responseId/option concurrently → both succeed with the same feedback, never a conflict);
+  - [x] double phase-complete → same summary (new, `AttemptServiceConcurrencyTest`);
+  - [x] two devices completing at once → serialised (pre-existing, DB-state assertion only — the
+        "same summary" half of this is the new test above);
+  - [x] the streak counted once per local day under concurrent completions (new, `ProgressServiceTest`,
+        already autowires the real proxied `ProgressService`, so no harness issue there).
+  - **Acceptance:** `--tests` run of the three touched classes green once; the 10-consecutive-runs
+    flakiness check was explicitly skipped by owner instruction to save time — not run.
 
 - [ ] **P7.T2 Load test (k6)** · Repo: BFF (scripts) · Dep: P6.T8 · Plan §9.1, §9.3
   - [ ] Scenario: a mix of home, learning-path (with ETag), theory, starts, answers and completions; target 670

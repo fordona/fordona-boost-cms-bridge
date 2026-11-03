@@ -2844,3 +2844,82 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P6.T8 (deploy BFF + stub + engine together on staging, Repo: EXT) — depends on P6.T5
   and P6.T6, both done. This is the external-infra task; P6 Phase exit follows once it's live.
+- **Owner note (2026-11-03):** P6.T8 is `Repo: EXT` (actual Dokploy infrastructure, env vars on a real
+  staging host) — not executable from this session. Skipped to P7, starting with the only task not
+  gated on P6.T8: P7.T1 (`Repo: ENG`, depends only on P5, already done).
+
+### 2026-11-03 · P7.T1 · Concurrency suite (engine, Testcontainers)
+
+- **Status:** DONE (one caveat on the acceptance bar — see below)
+- **Repo / branch / commit:** fordona-engine · feat/theory-app-implementations · 1c6821b9
+- **What was done:**
+  - Checked what already existed before writing anything: `AttemptServiceTest` already had
+    `start_concurrentDoubleStart_createsExactlyOneAttempt` and
+    `answer_twoConcurrentAnswersToTheSameItem_exactlyOneWins` (two *different* responseIds/options
+    racing — the conflict path) plus a DB-state-only
+    `concurrentDevicesCompletingTheSameLessonPhase_areSerialisedNotDoubled`. Three of Plan §14.2's five
+    scenarios were already partially or fully covered; two were genuinely missing.
+  - Added `answer_concurrentReplayOfTheSameResponseIdAndOption_bothSucceedWithIdenticalFeedback`
+    (`AttemptServiceTest`): the client's actual retry scenario — the *same* responseId/option submitted
+    twice because a response was slow or dropped. `store.answerItem`'s conditional `UPDATE` lets
+    exactly one call perform the write; the other reads back a row matching its own responseId/option
+    and returns identical feedback rather than throwing. Confirmed: both calls succeed, no exception,
+    identical `AnswerFeedbackDTO` (a record, so `equals` is structural).
+  - Added `recordLessonCompleted_concurrentCompletionsSameLocalDay_streakCountedOnce`
+    (`ProgressServiceTest`): two different lessons completed at the same `Instant` by the same user.
+    `ProgressServiceTest` already autowires the real, Spring-proxied `ProgressService`
+    (`findOrCreateSummaryForUpdate`'s `FOR UPDATE` lock genuinely applies), so this one needed no
+    harness change — confirmed `currentStreak == 1`, `longestStreak == 1`, `completedLessons == 2`.
+  - **Found a real gap while writing "double phase-complete → same summary" — not a production bug,
+    a test-harness one, and tracked it down rather than guessing or weakening the assertion.**
+    `AttemptServiceTest` deliberately builds `AttemptService` with `new` (its own class javadoc
+    explains why: avoiding the shared Postgres's global lesson-ordering noise on a mocked
+    `ContentSnapshotProvider`). That construction **strips the Spring AOP proxy**, so
+    `completeLessonPhase`'s own `@Transactional` annotation has no effect in that test file — its
+    `findByIdForUpdate` lock no longer spans the method's later compute-and-insert statements. Adding
+    `result1.equals(result2)` to the existing concurrent-phase-complete test reproduced a genuine race:
+    both concurrent calls read `status=IN_LESSON` before either committed, and both tried to insert the
+    same retry `seq`, throwing `DuplicateKeyException` on `attempt_item_pkey` — invisible until now
+    because the original test only asserted DB end-state, never that neither caller saw an exception.
+    Confirmed by reasoning, not just the symptom: `start()`'s own race safety lives in the separately
+    autowired (still-proxied) `AttemptInsertTransaction`, and `answer()`'s lives in a single atomic
+    `UPDATE` — only `completeLessonPhase`/`completeRetryPhase`'s *own* `@Transactional` boundary is at
+    stake, which is exactly the one thing `new AttemptService(...)` breaks.
+  - **Fix: a new class, not a rewrite of the existing one.** `AttemptServiceConcurrencyTest` (new file,
+    same package) autowires the real `AttemptService` bean, replacing only
+    `ContentSnapshotProvider`/`TheoryEntitlement` via `@MockitoBean` (Spring Boot's own bean-override
+    mechanism, already used elsewhere in this codebase, e.g. `ContentSyncServiceTest`) so the fixture
+    stays scoped to this test alone while `@Transactional` genuinely applies. Rewriting the whole
+    1000+-line `AttemptServiceTest` to use this pattern everywhere would have been a much larger,
+    riskier change to already-passing tests for a need that only this one scenario has — every other
+    test in that file is correctly protected by a collaborator or single-statement atomicity, as
+    reasoned above.
+    `completeLessonPhase_concurrentCalls_areSerialisedAndReturnTheSameSummary` in the new class asserts
+    what the original test couldn't: neither caller sees an exception, and both receive the identical
+    `AttemptPhaseCompletionDTO`.
+  - Left `AttemptServiceTest`'s own version of the phase-complete test in place (renamed back to its
+    original name), now explicitly catching the harness-artifact `DataIntegrityViolationException` with
+    a comment explaining why and pointing at the new class — not deleted, not silently weakened, since
+    it still genuinely proves "exactly 1 retry set exists in the end" regardless of which caller won.
+- **Tests:** 3 new test methods across 2 existing files + 1 new file (`AttemptServiceConcurrencyTest`,
+  1 method). Ran the three touched classes together via
+  `./gradlew test --tests AttemptServiceTest --tests ProgressServiceTest --tests AttemptServiceConcurrencyTest`
+  → green. `./gradlew compileTestJava` confirmed the whole module (no production code touched) still
+  compiles.
+- **Deviations from the plan / owner instruction:** the tracker's acceptance bar is "green 10 runs in a
+  row (no flakiness)." **The owner explicitly asked to skip that and move straight to committing**, to
+  save time in this session — the 10-run loop was started, then stopped on that instruction before
+  completing. The tests passed their one run cleanly; genuine flakiness (if any) in true thread-race
+  tests like these is unconfirmed either way. Logged here as a known gap against the tracker's own
+  acceptance criterion, not silently marked as fully met.
+- **Issues found / open risks:**
+  - The 10-consecutive-runs flakiness check from Plan §14.2 was not performed (see above) — worth
+    doing before relying on this suite as a release gate, since thread-interleaving-dependent tests are
+    exactly the kind that can pass once and flake later.
+  - `AttemptServiceTest` now has two tests covering overlapping ground for the same production method
+    (`completeLessonPhase`) with different fidelity (DB-state-only vs. full behavioural equality) —
+    intentional, documented in both tests' javadoc/comments, not duplication-by-accident.
+- **Ready to continue:** YES.
+- **Next task:** P7.T2 (load test, k6) and P7.T3 (observability) both depend on P6.T8 (undone,
+  external) — blocked. P7.T4 depends on P7.T3 — also blocked. No further P7 task is currently
+  unblocked; P6.T8 needs to happen (externally) before P7 can continue past T1.
