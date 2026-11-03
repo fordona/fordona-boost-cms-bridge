@@ -2764,3 +2764,83 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Next task:** P6.T7 (release prefetch, optional/off by default) — depends on P6.T3 (done). After
   that, P6.T8 (deploy BFF + stub + engine together on staging, Repo: EXT) depends on both P6.T5 and
   P6.T6, both now done.
+
+### 2026-11-03 · P6.T7 · Release prefetch (optional, off by default)
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF (fordona-boost-cms-bridge) · feat/theory-app-implementations · 2717013
+- **What was done:**
+  - **Spawned an `Explore` agent to read the engine source before designing anything**, to answer one
+    question precisely: is there any HTTP-reachable way for the BFF to read the engine's current
+    `release_id` on its own, with no learner in the loop? Plan §9.1 says "the sync's release id is
+    exposed to the BFF for this" but doesn't say how. Confirmed: `content_release.release_id` exists
+    (`ContentSnapshot`/`ContentSnapshotProvider`, `V1_0_16__theory_content_read_model.sql`), but the
+    **only** HTTP path that returns it is `GET /v1/platform/theory/content-report`
+    (`TheoryContentPlatformController`), gated `@PlatformAdmin` — a heavyweight back-office report, not
+    a poll target, and not reachable with the BFF's own internal-token credential at all. No
+    `/internal/theory/**` endpoint exposes it.
+  - **Decision, not a guess (BFF-only scope, no engine change):** rather than asking for a new engine
+    endpoint (cross-repo, outside this task's `Repo: BFF`), detection piggybacks on data the BFF already
+    receives as ordinary traffic. Every `home`/`learning-path` response's `learningPathEtag` /
+    `ETag` is `{releaseId}.{progressVersion}.{entitlementHash}.{locale}` (confirmed against
+    `LearningPathEtag.java` and Plan §7.3's own worked example) — "exposed to the BFF" turns out to
+    mean exactly this, not a new endpoint. `parse_release_id` reads the leading segment.
+  - New `services/release_prefetch.py`:
+    - `ReleasePrefetchGate`: one Redis `SET NX` (`RedisCache.try_lock`, already used for
+      `ContentCache`'s refresh lock) per release id, TTL 24 h — a release id never recurs
+      (`content_release.release_id` is `BIGSERIAL`), so this is purely "don't re-trigger from ordinary
+      traffic while one release is still current," not a correctness bound. `claim()` is cheap enough
+      to call on every single `home`/`learning-path` response, not just occasionally.
+    - `ReleasePrefetchRunner`: pages Boost's existing `lessons`/`questions` list endpoints (250/page,
+      matching Plan §7.5's "full lists, pageSize 250, only on a full resync" — reused here for the
+      BFF's own independent prefetch, not the engine's sync) for every `SUPPORTED_LOCALES` entry, warms
+      `BodyCache.get_lesson_revision` per lesson and `BodyCache.get_question_revisions` in
+      `BOOST_BATCH_MAX_REFS`-sized batches, pacing every batch call by the new
+      `CONTENT_PREFETCH_BATCH_DELAY_SECONDS` (default 0.2s — new, since no pacing knob existed; "batch
+      calls rate-limited" is an explicit tracker requirement with no existing setting to reuse). A
+      failure on any one lesson/batch is logged and the run continues — this is a pure warm-up
+      optimization, never allowed to fail a request or abort the rest of the catalogue.
+  - `TheoryService` takes optional `prefetch_gate`/`prefetch_runner` (both `None` unless the feature is
+    on — zero overhead, not even a Redis call, when disabled). `home()`/`learning_path()` call
+    `_maybe_prefetch(etag)` after getting their engine response; a claimed release id spawns a
+    `asyncio.create_task`, tracked in a `set` on the service so the task isn't garbage-collected
+    mid-flight (a plain fire-and-forget `create_task()` with no held reference is eligible for GC per
+    the `asyncio` docs' own warning).
+  - `container.py` builds both only when `CONTENT_PREFETCH_ON_RELEASE=true`, reusing the same
+    `BoostClient`/`BodyCache` instances `TheoryService` already has — no second client, no second cache.
+  - **Known, accepted limitation (not a bug):** under `BOOST_AUTH_MODE=forward_learner_token` (the
+    non-recommended mode, already flagged elsewhere via `access_boundary_warnings`), the background
+    prefetch task has no learner context of its own to forward to Boost — it opportunistically inherits
+    whichever learner's token was active via Python's own asyncio context-copying when the triggering
+    request's `create_task` ran. Functionally correct (no crash, the token is real and verified), but
+    worth noting: under the target `BOOST_AUTH_MODE=service_token` setup this doesn't arise at all,
+    since the client always uses the configured service token regardless of request context.
+- **Tests:**
+  - `tests/unit/test_release_prefetch.py` (8): `parse_release_id` on a quoted/unquoted/empty etag;
+    `ReleasePrefetchGate` claims a release id exactly once and treats different release ids
+    independently; `ReleasePrefetchRunner` warms a lesson revision and a question batch across both
+    locales (asserting Boost call counts: once per locale, matching `SUPPORTED_LOCALES`); a failed
+    lesson-revision fetch (Boost 500) doesn't abort the run.
+  - `tests/api/test_theory_prefetch_trigger.py` (2, full stack): disabled by default — a `GET /v1/home`
+    makes zero catalogue calls even after waiting past when a background task would have run; enabled
+    via a settings override — the first `GET /v1/home` triggers exactly one prefetch pass (asserted by
+    Boost call counts after `asyncio.sleep` lets the fire-and-forget task run), and a second request
+    with the same release id triggers nothing further.
+  - Full gate: `uv run pytest -q` → 432 passed, 52 skipped (10 new); `uv run ruff check .` /
+    `uv run ruff format --check .` → clean; `uv run mypy src scripts` → clean on 76 source files;
+    `uv run lint-imports --config pyproject.toml` → the `boost_bridge`/`boost_stub` contract still kept.
+- **Deviations from the plan:** none requiring a logged decision in the "silently changed behaviour"
+  sense — "piggyback on the existing ETag instead of a new engine endpoint" is the only way to
+  implement this entirely within `Repo: BFF`, confirmed by reading the engine source first rather than
+  assumed.
+- **Issues found / open risks:**
+  - The async-timing-dependent API test (`test_theory_prefetch_trigger.py`) waits on a fixed
+    `asyncio.sleep` for the fire-and-forget task to finish rather than an explicit completion signal —
+    acceptable for a fast, fully-mocked respx/fakeredis run, but worth knowing if it ever becomes flaky
+    under load (the unit-level `ReleasePrefetchRunner` tests `await` the work directly and carry the
+    real assertions; the API test is a wiring smoke test, not the primary coverage).
+  - The forward_learner_token caveat above: purely informational, not a defect, since the recommended
+    production setup (`service_token`) never exercises that path.
+- **Ready to continue:** YES.
+- **Next task:** P6.T8 (deploy BFF + stub + engine together on staging, Repo: EXT) — depends on P6.T5
+  and P6.T6, both done. This is the external-infra task; P6 Phase exit follows once it's live.

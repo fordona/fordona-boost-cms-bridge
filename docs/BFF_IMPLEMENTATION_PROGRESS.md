@@ -890,10 +890,16 @@ every repository the plan touches:
         (starts, responses, completions) use `RATE_LIMIT_WRITE_PER_MINUTE`. Return 429 RFC 7807 with `Retry-After`.
   - **Unit tests:** limit reached → 429; separate buckets per learner; separate buckets read/write.
 
-- [ ] **P6.T7 Release prefetch (optional, off by default)** · Repo: BFF · Dep: P6.T3 · Plan §9.1
-  - [ ] When `CONTENT_PREFETCH_ON_RELEASE=true`, warm the cache for every current question and lesson revision after
-        an engine release change. Use a background task, with batch calls rate-limited.
-  - **Unit tests:** idempotent; respects batch limits.
+- [x] **P6.T7 Release prefetch (optional, off by default)** · Repo: BFF · Dep: P6.T3 · Plan §9.1 — DONE
+  (2026-11-03): no dedicated engine release-id endpoint exists (confirmed by reading the engine source —
+  the only one is the platform-admin-gated content-report, out of this BFF-only task's reach), so
+  detection piggybacks on the release id already embedded in every home/learning-path `learningPathEtag`
+  (Plan §7.3/§7.4) instead of adding a new engine endpoint. 432 passed, 52 skipped; gate clean.
+  - [x] When `CONTENT_PREFETCH_ON_RELEASE=true`, warm the cache for every current question and lesson revision after
+        an engine release change. Use a background task, with batch calls rate-limited
+        (`CONTENT_PREFETCH_BATCH_DELAY_SECONDS`, new).
+  - **Unit tests:** idempotent (`ReleasePrefetchGate` claims a release id exactly once); respects batch
+    limits (paginates Boost's lists at 250/page, batches question revisions at `BOOST_BATCH_MAX_REFS`).
 
 - [ ] **P6.T8 Deploy BFF + stub + engine together on staging** · Repo: EXT · Dep: P6.T5, P6.T6
   - [ ] BFF environment: `ENGINE_BASE_URL` (internal host), `ENGINE_INTERNAL_TOKEN` (same as the engine),
