@@ -41,6 +41,7 @@ class ErrorCode:
     # service's job — Plan §7.3, "the BFF fetches no theory for a locked lesson").
     THEORY_LESSON_LOCKED = "THEORY_LESSON_LOCKED"
     THEORY_MODULE_LOCKED = "THEORY_ATTEMPT_MODULE_LOCKED"
+    RATE_LIMITED = "RATE_LIMITED"
 
 
 class AppError(Exception):
@@ -123,6 +124,16 @@ class TheoryModuleLockedError(AppError):
     error_code = ErrorCode.THEORY_MODULE_LOCKED
     type_path = "theory/module-locked"
     default_detail = "This unit requires an active subscription."
+
+
+class RateLimitedError(AppError):
+    status_code = 429
+    error_code = ErrorCode.RATE_LIMITED
+    type_path = "rate-limit/exceeded"
+    default_detail = "Too many requests. Please slow down."
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(headers={"Retry-After": str(retry_after_seconds)})
 
 
 def _title(error_code: str) -> str:

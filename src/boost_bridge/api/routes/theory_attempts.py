@@ -14,7 +14,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Path
 
-from boost_bridge.api.deps import CurrentLearner, Locale, Theory, Timezone
+from boost_bridge.api.deps import (
+    CurrentLearner,
+    Locale,
+    ReadRateLimit,
+    Theory,
+    Timezone,
+    WriteRateLimit,
+)
 from boost_bridge.api.responses import (
     ATTEMPT_GET_ERRORS,
     ATTEMPT_START_ERRORS,
@@ -46,6 +53,7 @@ AttemptId = Annotated[UUID, Path(alias="attemptId")]
 async def start_attempt(
     theory: Theory,
     _: CurrentLearner,
+    __: WriteRateLimit,
     locale: Locale,
     lesson_id: LessonId,
     body: StartAttemptIn,
@@ -60,7 +68,7 @@ async def start_attempt(
     summary="Resume an attempt after the app restarts",
 )
 async def get_attempt(
-    theory: Theory, _: CurrentLearner, locale: Locale, attempt_id: AttemptId
+    theory: Theory, _: CurrentLearner, __: ReadRateLimit, locale: Locale, attempt_id: AttemptId
 ) -> AttemptOut:
     return await theory.get_attempt(attempt_id, locale=locale)
 
@@ -74,6 +82,7 @@ async def get_attempt(
 async def answer(
     theory: Theory,
     _: CurrentLearner,
+    __: WriteRateLimit,
     locale: Locale,
     attempt_id: AttemptId,
     body: AnswerIn,
@@ -95,7 +104,12 @@ async def answer(
     summary="Complete the lesson phase — starts the retry phase, or completes the attempt",
 )
 async def complete_lesson_phase(
-    theory: Theory, _: CurrentLearner, locale: Locale, timezone: Timezone, attempt_id: AttemptId
+    theory: Theory,
+    _: CurrentLearner,
+    __: WriteRateLimit,
+    locale: Locale,
+    timezone: Timezone,
+    attempt_id: AttemptId,
 ) -> LessonPhaseCompletionOut:
     return await theory.complete_lesson_phase(attempt_id, locale=locale, timezone=timezone)
 
@@ -107,6 +121,11 @@ async def complete_lesson_phase(
     summary="Complete the retry phase — the attempt and lesson finish COMPLETED",
 )
 async def complete_retry_phase(
-    theory: Theory, _: CurrentLearner, locale: Locale, timezone: Timezone, attempt_id: AttemptId
+    theory: Theory,
+    _: CurrentLearner,
+    __: WriteRateLimit,
+    locale: Locale,
+    timezone: Timezone,
+    attempt_id: AttemptId,
 ) -> RetryPhaseCompletionOut:
     return await theory.complete_retry_phase(attempt_id, locale=locale, timezone=timezone)

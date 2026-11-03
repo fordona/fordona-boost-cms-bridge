@@ -33,12 +33,21 @@ _AUTH_ERROR: dict[int | str, dict[str, Any]] = {
     401: _problem("Missing, invalid or expired access token.")
 }
 
-READ_ERRORS: dict[int | str, dict[str, Any]] = {**_AUTH_ERROR, **_UPSTREAM_ERRORS}
+_RATE_LIMIT_ERROR: dict[int | str, dict[str, Any]] = {
+    429: _problem("Too many requests for this learner — see Retry-After.")
+}
+
+READ_ERRORS: dict[int | str, dict[str, Any]] = {
+    **_AUTH_ERROR,
+    **_RATE_LIMIT_ERROR,
+    **_UPSTREAM_ERRORS,
+}
 
 LESSON_DETAIL_ERRORS: dict[int | str, dict[str, Any]] = {
     **_AUTH_ERROR,
     403: _problem("THEORY_LESSON_LOCKED or THEORY_ATTEMPT_MODULE_LOCKED."),
     404: _problem("THEORY_ATTEMPT_LESSON_NOT_FOUND."),
+    **_RATE_LIMIT_ERROR,
     **_UPSTREAM_ERRORS,
 }
 
@@ -48,12 +57,14 @@ ATTEMPT_START_ERRORS: dict[int | str, dict[str, Any]] = {
     404: _problem("THEORY_ATTEMPT_LESSON_NOT_FOUND."),
     409: _problem("THEORY_REQUEST_ID_CONFLICT: requestId reused for a different lesson."),
     422: _problem("Invalid request body."),
+    **_RATE_LIMIT_ERROR,
     **_UPSTREAM_ERRORS,
 }
 
 ATTEMPT_GET_ERRORS: dict[int | str, dict[str, Any]] = {
     **_AUTH_ERROR,
     404: _problem("THEORY_ATTEMPT_NOT_FOUND: unknown id, or another learner's attempt."),
+    **_RATE_LIMIT_ERROR,
     **_UPSTREAM_ERRORS,
 }
 
@@ -62,6 +73,7 @@ RESPONSE_ERRORS: dict[int | str, dict[str, Any]] = {
     404: _problem("THEORY_ATTEMPT_NOT_FOUND or THEORY_ITEM_NOT_FOUND."),
     409: _problem("THEORY_RESPONSE_CONFLICT or THEORY_PHASE_CLOSED."),
     422: _problem("THEORY_OPTION_INVALID, or an invalid request body."),
+    **_RATE_LIMIT_ERROR,
     **_UPSTREAM_ERRORS,
 }
 
@@ -69,5 +81,6 @@ PHASE_COMPLETE_ERRORS: dict[int | str, dict[str, Any]] = {
     **_AUTH_ERROR,
     404: _problem("THEORY_ATTEMPT_NOT_FOUND."),
     409: _problem("THEORY_PHASE_INCOMPLETE: unanswered items remain."),
+    **_RATE_LIMIT_ERROR,
     **_UPSTREAM_ERRORS,
 }

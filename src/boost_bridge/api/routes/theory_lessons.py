@@ -7,7 +7,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path
 
-from boost_bridge.api.deps import CurrentLearner, Locale, Theory
+from boost_bridge.api.deps import CurrentLearner, Locale, ReadRateLimit, Theory
 from boost_bridge.api.responses import LESSON_DETAIL_ERRORS
 from boost_bridge.schemas.common import ID_PATTERN
 from boost_bridge.schemas.theory import LessonDetailOut
@@ -24,6 +24,6 @@ LessonId = Annotated[str, Path(alias="lessonId", pattern=ID_PATTERN, examples=["
     summary="Lesson theory, before Start Quiz",
 )
 async def get_lesson(
-    theory: Theory, _: CurrentLearner, locale: Locale, lesson_id: LessonId
+    theory: Theory, _: CurrentLearner, __: ReadRateLimit, locale: Locale, lesson_id: LessonId
 ) -> LessonDetailOut:
     return await theory.lesson_detail(lesson_id, locale=locale)

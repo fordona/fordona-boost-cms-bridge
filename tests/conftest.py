@@ -24,6 +24,7 @@ from fastapi import APIRouter, FastAPI
 
 from boost_bridge.api.deps import CurrentLearner, Locale
 from boost_bridge.cache.attempt_refs import AttemptRefCache
+from boost_bridge.cache.rate_limit import RateLimiter
 from boost_bridge.cache.redis_cache import RedisCache
 from boost_bridge.clients.boost.client import BoostClient
 from boost_bridge.clients.boost.client import create_http_client as create_boost_http_client
@@ -121,8 +122,9 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                     create_boost_http_client(s) as boost_http,
                     create_engine_http_client(s) as engine_http,
                 ):
+                    fake_redis = FakeAsyncRedis(server=FakeServer())
                     redis_cache = RedisCache(
-                        FakeAsyncRedis(server=FakeServer()),
+                        fake_redis,
                         hard_ttl_seconds=s.cache_hard_ttl_seconds,
                         negative_ttl_seconds=s.cache_negative_ttl_seconds,
                     )
@@ -139,6 +141,11 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         body_cache,
                         AttemptRefCache(redis_cache),
                         build_asset_url_resolver(s),
+                    )
+                    rate_limiter = RateLimiter(
+                        fake_redis,
+                        read_limit_per_minute=s.rate_limit_read_per_minute,
+                        write_limit_per_minute=s.rate_limit_write_per_minute,
                     )
 
                     def check(name: str) -> Callable[[], Awaitable[None]]:
@@ -157,6 +164,7 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         if s.auth_enabled
                         else None,
                         theory=theory,
+                        rate_limiter=rate_limiter,
                         readiness_checks={name: check(name) for name in readiness},
                     )
 

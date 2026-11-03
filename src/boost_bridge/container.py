@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from boost_bridge.cache.attempt_refs import AttemptRefCache
+from boost_bridge.cache.rate_limit import RateLimiter
 from boost_bridge.cache.redis_cache import RedisCache, create_redis
 from boost_bridge.clients.boost.client import BoostClient
 from boost_bridge.clients.boost.client import create_http_client as create_boost_http_client
@@ -28,6 +29,7 @@ class Services:
     # None only when AUTH_ENABLED=false, which Settings permits in APP_ENV=local only.
     verifier: TokenVerifier | None
     theory: TheoryService
+    rate_limiter: RateLimiter
     readiness_checks: dict[str, ReadinessCheck] = field(default_factory=dict)
 
 
@@ -66,6 +68,11 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
     attempt_refs = AttemptRefCache(redis_cache)
     resolver = build_asset_url_resolver(settings)
     theory = TheoryService(engine_client, body_cache, attempt_refs, resolver)
+    rate_limiter = RateLimiter(
+        redis,
+        read_limit_per_minute=settings.rate_limit_read_per_minute,
+        write_limit_per_minute=settings.rate_limit_write_per_minute,
+    )
 
     async def check_database() -> None:
         await ping(db_engine)
@@ -74,6 +81,7 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
         yield Services(
             verifier=verifier,
             theory=theory,
+            rate_limiter=rate_limiter,
             readiness_checks={"database": check_database, "redis": redis_cache.ping},
         )
     finally:

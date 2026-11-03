@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Response
 
-from boost_bridge.api.deps import CurrentLearner, Locale, Theory, Timezone
+from boost_bridge.api.deps import CurrentLearner, Locale, ReadRateLimit, Theory, Timezone
 from boost_bridge.api.responses import READ_ERRORS
 from boost_bridge.schemas.theory import HomeOut, LearningPathOut, ReadinessOut
 
@@ -20,7 +20,7 @@ IfNoneMatch = Annotated[str | None, Header(alias="If-None-Match", include_in_sch
     summary="Home dashboard — week, streak, daily challenge, readiness, continue card",
 )
 async def get_home(
-    theory: Theory, _: CurrentLearner, locale: Locale, timezone: Timezone
+    theory: Theory, _: CurrentLearner, __: ReadRateLimit, locale: Locale, timezone: Timezone
 ) -> HomeOut:
     return await theory.home(locale=locale, timezone=timezone)
 
@@ -35,6 +35,7 @@ async def get_learning_path(
     response: Response,
     theory: Theory,
     _: CurrentLearner,
+    __: ReadRateLimit,
     locale: Locale,
     if_none_match: IfNoneMatch = None,
 ) -> LearningPathOut | Response:
@@ -56,5 +57,7 @@ async def get_learning_path(
     responses=READ_ERRORS,
     summary="Readiness detail screen",
 )
-async def get_readiness(theory: Theory, _: CurrentLearner, locale: Locale) -> ReadinessOut:
+async def get_readiness(
+    theory: Theory, _: CurrentLearner, __: ReadRateLimit, locale: Locale
+) -> ReadinessOut:
     return await theory.readiness(locale=locale)
