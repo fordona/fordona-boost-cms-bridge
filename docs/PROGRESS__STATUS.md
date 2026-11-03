@@ -2253,3 +2253,61 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES. P5 is fully closed.
 - **Next task:** the next unstarted phase in the tracker (P6) — read its own task list fresh before
   starting, same as every previous phase transition in this project.
+
+### 2026-11-03 · P6.T1 · Settings for the new integrations
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF (fordona-boost-cms-bridge) · feat/theory-app-implementations ·
+  0a2f9f1, 430a2fd — **first BFF-repo code commit in this project's history**; every prior session on
+  this branch was engine-only work, so this is a genuine stack switch (Python 3.12/FastAPI/pydantic-
+  settings, not Java/Spring) and the first time `CLAUDE.md`'s BFF-side rules actually applied.
+- **What was done:**
+  - Added to `core/config.Settings`, following the exact validation style the file already uses for
+    `BOOST_DELIVERY_TOKEN`/`BOOST_AUTH_MODE` (a `model_validator(mode="after")` cross-field check,
+    never a per-field default that silently degrades):
+    - Engine client: `engine_base_url`, `engine_internal_token` (`SecretStr`), `engine_read_timeout`
+      (2.0s default), `engine_phase_complete_timeout` (5.0s), `engine_pool_max_connections` (20).
+    - Boost batching/prefetch: `boost_batch_max_refs` (100, matching Plan §13's "chunks of 100"),
+      `content_prefetch_on_release` (off by default, per P6.T7's own "optional, off by default").
+    - Media: `media_cdn_base_url`, `media_signing_key` (`SecretStr`), `media_signed_url_ttl_seconds`
+      (3600s), `media_free_unit_ids` (CSV-split list of decimal-string `ContentId`s, same `_split_csv`
+      validator already used for `cors_allowed_origins`/`kinde_audience`).
+    - Rate limiting: `rate_limit_read_per_minute` (120), `rate_limit_write_per_minute` (30).
+  - **`ENGINE_INTERNAL_TOKEN` and `MEDIA_SIGNING_KEY` are both required outside `APP_ENV=local`** —
+    added to the same `_check_consistency` validator that already refuses `AUTH_ENABLED=false` and a
+    missing `BOOST_DELIVERY_TOKEN` outside local. Both are genuine security invariants, not just the
+    one the tracker named: an engine call with no internal token is simply refused by the engine's own
+    `TheoryInternalTokenFilter` (a correctness failure, not a leak), but a missing signing key would
+    mean *every* media URL ships unsigned — paid theory content reachable without the subscription
+    check this whole bridge exists to enforce (CLAUDE.md invariant #2). Required both, not just the one
+    literally named in the tracker's bullet, since leaving the second as a silent optional would be the
+    kind of gap this task's own "startup refuses a missing \[...\] outside local" principle exists to
+    close.
+  - **Also tightened the pre-existing Boost client timeouts to the plan's own values**, which the
+    tracker's own bullet calls for but which aren't new settings:
+    `BOOST_READ_TIMEOUT` 5.0 → **1.5s**, `BOOST_MAX_RETRIES` 2 → **1**, `BOOST_TOTAL_BUDGET` 8.0 →
+    **3.0s**, matching Plan §7.4/§9.1's explicit "1.5 s per Boost call." These were left over from
+    before the theory-first-shipment plan's own latency budget was set and would otherwise have let a
+    slow/stuck Boost call blow well past what Plan §9.1's p99 targets assume.
+  - Updated `.env.example` with every new variable (secrets left empty) and the corrected Boost
+    timeout values, with inline comments explaining each one's source/purpose, matching the file's
+    existing documentation density.
+- **Tests:** `tests/unit/test_config.py` (+6 new tests, 19/19 in that file): engine token required
+  outside local; not required locally; media signing key required outside local; the engine token
+  isn't rendered in `repr(settings)` (mirrors the existing `boost_delivery_token` secrecy test);
+  `media_free_unit_ids` splits as CSV. Two **existing** tests
+  (`test_forward_mode_is_default_and_needs_no_delivery_token`,
+  `test_log_format_defaults_by_environment`) needed `engine_internal_token`/`media_signing_key` added
+  to their `app_env="prod"` fixtures, since they now fail the new validator otherwise — not a weakened
+  test, a necessary update to keep exercising what they were already testing.
+  - Full gate: `uv run pytest -q` → 338 passed, 52 skipped (Docker-only integration tests auto-skip,
+    consistent with every prior session's baseline); `uv run ruff check .` and
+    `uv run ruff format --check .` → clean; `uv run mypy src scripts` → clean on 57 source files.
+- **Deviations from the plan:** none — the two "also required" decisions above are a stricter reading
+  of the tracker's own stated principle ("startup refuses a missing \[...\] outside local"), not a
+  deviation from it.
+- **Issues found / open risks:** none new. This task only adds configuration surface — nothing reads
+  these new settings yet (P6.T2's engine client and P6.T4's media signer are the first consumers), so
+  there is no behavioural risk to carry forward from this task specifically.
+- **Ready to continue:** YES.
+- **Next task:** P6.T2 (engine client) — depends on P6.T1 (now done) and P5 (done).

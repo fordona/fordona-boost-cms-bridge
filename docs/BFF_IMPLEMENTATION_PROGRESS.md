@@ -779,15 +779,15 @@ every repository the plan touches:
 
 - [ ] **P6 — phase done**
 
-- [ ] **P6.T1 Settings for the new integrations** · Repo: BFF · Dep: P1 · Plan §7.4, the BFF env file
-  - [ ] Add settings with validation:
+- [x] **P6.T1 Settings for the new integrations** · Repo: BFF · Dep: P1 · Plan §7.4, the BFF env file
+  - [x] Add settings with validation:
     - `ENGINE_BASE_URL`, `ENGINE_INTERNAL_TOKEN` (`SecretStr`), `ENGINE_READ_TIMEOUT`,
       `ENGINE_PHASE_COMPLETE_TIMEOUT`, `ENGINE_POOL_MAX_CONNECTIONS`;
     - `BOOST_BATCH_MAX_REFS`, `CONTENT_PREFETCH_ON_RELEASE`;
     - `MEDIA_CDN_BASE_URL`, `MEDIA_SIGNING_KEY` (`SecretStr`), `MEDIA_SIGNED_URL_TTL_SECONDS`,
       `MEDIA_FREE_UNIT_IDS`;
     - `RATE_LIMIT_READ_PER_MINUTE`, `RATE_LIMIT_WRITE_PER_MINUTE`.
-  - [ ] Update `.env.example` (no secrets); set the Boost timeouts to the plan values (1.5 s read, 1 retry, 3 s
+  - [x] Update `.env.example` (no secrets); set the Boost timeouts to the plan values (1.5 s read, 1 retry, 3 s
         budget).
   - **Unit tests:** the missing-required-value errors; startup refuses a missing engine token outside `local`.
 
