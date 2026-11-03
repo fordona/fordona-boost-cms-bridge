@@ -2010,3 +2010,65 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
     `recordAttemptStarted` non-atomicity with the attempt insert.
 - **Ready to continue:** YES.
 - **Next task:** P5.T5 (learning path with ETag) — depends on P5.T3 (done). Plan §7.3 `GET /v1/learning-path`.
+
+### 2026-11-03 · P5.T5 · Learning path with ETag
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 02776f9a
+- **What was done:**
+  - `GET /internal/theory/v1/learning-path` (new `TheoryLearningPathInternalController`), split across
+    two `LearningPathService` methods on purpose:
+    - `computeETag(userId, acceptLanguageHeader)` — the one-PK-read half. Reads only
+      `learner_theory_summary` (via the existing `ProgressStore#findSummary`, defaulting
+      `progress_version` to 0 if the row doesn't exist yet), combines it with the in-memory snapshot's
+      `releaseId`, the cached `TheoryEntitlement#isSubscribed`, and the resolved locale. Never touches
+      `lesson_progress`.
+    - `getLearningPath(userId, acceptLanguageHeader)` — the full body, built only when the ETag doesn't
+      match. Reuses the exact same pattern P5.T4 established: `lesson_progress` range scan →
+      `completedLessonIds` → `UnlockService.resolve(...)` → per-lesson status, with `lastResult`
+      (`last_lesson_correct`/`total`, only for `COMPLETED` entries) and `openAttempt` read off each
+      lesson's own `lesson_progress` row.
+    - Per-unit `locked`/`lockReason`: `!entitlement.isUnitEntitled(userId, unitId)` →
+      `lockReason = "SUBSCRIPTION"` — the only lock reason that exists at unit level in this release,
+      matching the plan's own example and the current entitlement model's binary nature (P4.T2).
+    - Per-unit `progress` (`completedLessons`/`totalLessons`/`percent`) is a **literal lesson-count**
+      ratio, not an accuracy-weighted score — deliberately different from readiness's own formula
+      (`Σ best_accuracy / totalLessons`, P5.T6's job), since the plan's own example shows this object
+      with no `averageBestAccuracy` field, unlike readiness's.
+  - New `TheoryTitleResolver` (pure, `content` package): the locale-map → display-string resolution that
+    was inline in `HomeService` (P5.T4) moved out and shared here — now used for both unit and lesson
+    titles in both endpoints, since it was genuinely duplicated logic, not three similar lines.
+  - **The controller returns `ResponseEntity<Payload<T>>`, not the usual bare `Payload<T>`.** A 304 has
+    no body by HTTP semantics, and `ETag`/`Cache-Control` need header-level access the auto-wrapped
+    convention (`CLAUDE.md`'s "Return `Payload<T>` always") doesn't provide. This is a necessary,
+    narrow exception for exactly this one endpoint — every other theory endpoint keeps the plain
+    `Payload<T>` return. Uses Spring's own `WebRequest#checkNotModified(etag)` for the actual
+    conditional-GET comparison (handles weak/strong ETag and multi-value `If-None-Match` correctly)
+    rather than a hand-rolled string equality check; on a match it sets the response's 304 status and
+    validator headers itself, so the controller returns `null` rather than building a second, competing
+    `ResponseEntity` over an already-configured response.
+- **Tests:**
+  - `LearningPathServiceTest` (13, real Postgres, same per-test-own-snapshot pattern as
+    `AttemptServiceTest`/`HomeServiceTest`): exactly one `CURRENT` entry; an unentitled unit is
+    `locked` with `lockReason = "SUBSCRIPTION"`; an entitled unit is never locked; a completed lesson
+    carries `lastResult`; a retake of a completed lesson carries `openAttempt`; per-unit progress counts
+    completed-out-of-total correctly; the ETag is stable across calls with no state change, and changes
+    on lesson completion, on attempt start, on an entitlement flip, on a new content release, and on a
+    locale change; and the tracker's own acceptance test — 15 units × 10 lessons (150 lessons) serialises
+    to well under 30 KB.
+  - `TheoryLearningPathInternalControllerTest` (4, `@WebMvcTest`, mocked service): missing internal
+    token → 403; no `If-None-Match` → 200 with the `ETag` and `Cache-Control: no-cache, private`
+    headers set and the body present; a matching `If-None-Match` → 304, with an explicit
+    `verify(..., never()).getLearningPath(...)` confirming the full body (and its own
+    `lesson_progress`/snapshot reads) is never built on a 304 — the concrete form the tracker's "query
+    count = 1" acceptance line takes in this codebase, since there's no literal SQL-counting harness
+    here either (same precedent as P5.T4); a non-matching `If-None-Match` → fresh 200 body with the new
+    ETag.
+  - Full suite: `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** the `ResponseEntity` return type for this one controller, logged above —
+  a necessary consequence of 304 having no body, not a stylistic choice.
+- **Issues found / open risks:** none new. Carried forward, unrelated to this task: `levelDropAllowed`
+  (P4.T6) still unwired; the two P4.T8 deviations (locked → 200, partial `estimatedMinutes`); P5.T3's
+  `recordAttemptStarted` non-atomicity; P5.T4's partial-failure ETag fallback.
+- **Ready to continue:** YES.
+- **Next task:** P5.T6 (readiness endpoint) — depends on P5.T3 (done). Plan §5.7, §7.3.

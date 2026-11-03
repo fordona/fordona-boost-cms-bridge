@@ -739,18 +739,19 @@ every repository the plan touches:
   - **Acceptance:** the response matches the Plan §7.3 example shape field for field (asserted directly, not a
         separate JSON-schema file).
 
-- [ ] **P5.T5 Learning path with ETag** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/learning-path`
-  - [ ] `GET /internal/theory/v1/learning-path`:
+- [x] **P5.T5 Learning path with ETag** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/learning-path`
+  - [x] `GET /internal/theory/v1/learning-path`:
     - every unit with `entries` (`kind = lesson`), `displayIndex` from the snapshot order, and per-unit progress;
     - entry status `completed | current | locked`, with **exactly one** `current`;
     - `openAttempt` on a retaken completed lesson.
-  - [ ] ETag `"{release_id}.{progress_version}.{entitlement_hash}.{locale}"`: a matching `If-None-Match` → 304 after
+  - [x] ETag `"{release_id}.{progress_version}.{entitlement_hash}.{locale}"`: a matching `If-None-Match` → 304 after
         **one** PK read. Headers `Cache-Control: private, no-cache`.
   - **Tests:**
-    - [ ] 304 path (query count = 1);
-    - [ ] ETag changes on completion, on start, on an entitlement change, on a new release, and on a locale change;
-    - [ ] exactly one `current`;
-    - [ ] locked unit 2 with `lockReason: SUBSCRIPTION`.
+    - [x] 304 path (query count = 1 — verified as "the full-body read path is never invoked" via a
+          service mock, not a literal SQL counter, same convention as P5.T4);
+    - [x] ETag changes on completion, on start, on an entitlement change, on a new release, and on a locale change;
+    - [x] exactly one `current`;
+    - [x] locked unit 2 with `lockReason: SUBSCRIPTION`.
   - **Acceptance:** a ~150-lesson fixture serialises to ≤ 30 KB.
 
 - [ ] **P5.T6 Readiness endpoint** · Repo: ENG · Dep: P5.T3 · Plan §5.7, §7.3
