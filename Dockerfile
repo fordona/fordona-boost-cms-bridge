@@ -54,6 +54,10 @@ WORKDIR /app
 
 COPY --from=build --chown=app:app /app/.venv /app/.venv
 COPY --chown=app:app src/boost_stub ./src/boost_stub
+# StubSettings.stub_data_dir resolves to /app/stub-data (three parents up from
+# config.py) — without this, container.py's startup `load(settings.stub_data_dir)`
+# fails on a missing directory and the stub never boots.
+COPY --chown=app:app stub-data ./stub-data
 # The change tracker's SQLite file needs a writable directory; /app itself is
 # root-owned (created by WORKDIR before USER app takes effect below).
 RUN mkdir -p /app/data && chown app:app /app/data
