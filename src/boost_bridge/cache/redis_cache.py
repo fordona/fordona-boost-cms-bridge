@@ -73,6 +73,19 @@ class RedisCache:
         envelope = {"v": _ENVELOPE_VERSION, "fetchedAt": fetched_at, "payload": payload}
         await self._write(key, envelope, self._hard_ttl)
 
+    async def set_forever(self, key: str, payload: Any, *, fetched_at: float) -> None:
+        """No TTL — for immutable content (Plan §13/P6.T3: a Boost revision never changes
+        once published; a different edit always bumps the version). Never used for
+        anything that can go stale, since nothing ever purges or refreshes it.
+        """
+        envelope = {"v": _ENVELOPE_VERSION, "fetchedAt": fetched_at, "payload": payload}
+        try:
+            await self._redis.set(
+                key, json.dumps(envelope, separators=(",", ":"), ensure_ascii=False)
+            )
+        except (RedisError, OSError) as exc:
+            log.warning("redis_set_failed", key=key, error=repr(exc))
+
     async def set_negative(self, key: str, *, fetched_at: float) -> None:
         envelope = {"v": _ENVELOPE_VERSION, "fetchedAt": fetched_at, "negative": True}
         await self._write(key, envelope, self._negative_ttl)

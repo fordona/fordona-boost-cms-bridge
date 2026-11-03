@@ -25,3 +25,11 @@ def cache_key(request: BoostRequest[Any]) -> str:
 
 def refresh_lock_key(key: str) -> str:
     return f"{key}:refresh-lock"
+
+
+def body_cache_key(entity: str, content_id: str, version: str, locale: str) -> str:
+    """Plan §13/P6.T3: ``(entity, id, version, locale)`` — no digest needed, unlike
+    ``cache_key``'s list/query caching, since this tuple is already a clean,
+    collision-free compound key on its own.
+    """
+    return f"bridge:{CACHE_SCHEMA_VERSION}:body:{entity}:{content_id}:{version}:{locale}"

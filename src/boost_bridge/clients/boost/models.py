@@ -25,7 +25,7 @@ modelled**. Code that does not exist cannot leak them.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
@@ -35,6 +35,89 @@ class BoostModel(BaseModel):
     model_config = ConfigDict(
         extra="ignore", alias_generator=to_camel, populate_by_name=True, frozen=True
     )
+
+
+# --- Content blocks (Plan §4.6, §13.4) --------------------------------------
+#
+# Theory, question prompts, options and explanations all use one block format.
+# Explanation blocks are not modelled here at all (grading-only, never reaches
+# the BFF — see the module docstring's answer-fields rule); this covers theory,
+# prompt and option blocks, the only ones the delivery API ever returns.
+#
+# ``UnknownBlock`` is the forward-compatible fallback: §4.6 says "an unknown
+# block type is skipped by the app," which only works if parsing a block list
+# containing one never raises in the first place. Deciding what to *do* with
+# an unknown block (drop it, log it) is P6.T4's job; this layer only needs to
+# not crash on one.
+
+
+class TextBlock(BoostModel):
+    type: Literal["text"] = "text"
+    markdown: str
+
+
+class ImageBlock(BoostModel):
+    type: Literal["image"] = "image"
+    asset_id: str
+    alt: str
+    width: int | None = None
+    height: int | None = None
+    caption: str | None = None
+
+
+class AnimationBlock(BoostModel):
+    type: Literal["animation"] = "animation"
+    asset_id: str
+    format: str  # "lottie" or "video_loop"
+    alt: str
+
+
+class VideoCaption(BoostModel):
+    locale: str | None = None
+    # UNVERIFIED (no real payload captured yet): assumed to be a published file
+    # id, matching how every other asset reference in this contract works.
+    file_id: str | None = None
+
+
+class VideoBlock(BoostModel):
+    type: Literal["video"] = "video"
+    asset_id: str
+    poster_asset_id: str | None = None
+    duration_sec: int | None = None
+    captions: list[VideoCaption] = Field(default_factory=list)
+
+
+class AudioBlock(BoostModel):
+    type: Literal["audio"] = "audio"
+    asset_id: str
+    duration_sec: int | None = None
+    transcript: str | None = None
+
+
+class RuleCardBlock(BoostModel):
+    type: Literal["rule_card"] = "rule_card"
+    kind: str  # "RULE" or "SIGN"
+    title: str
+    points: list[str] = Field(default_factory=list)
+    image: ImageBlock | None = None
+
+
+class UnknownBlock(BoostModel):
+    """Anything whose ``type`` isn't one of the above — kept, never dropped here."""
+
+    type: str
+
+
+ContentBlock = Annotated[
+    TextBlock
+    | ImageBlock
+    | AnimationBlock
+    | VideoBlock
+    | AudioBlock
+    | RuleCardBlock
+    | UnknownBlock,
+    Field(union_mode="left_to_right"),
+]
 
 
 class Resource(BoostModel):
@@ -97,6 +180,9 @@ class LessonTranslation(BoostModel):
     title: str | None = None
     slug: str | None = None
     content_html: str | None = None
+    # §13.4 (new): the theory itself, as a block list. ``content_html`` stays
+    # for existing consumers; a lesson revision carries both.
+    blocks: list[ContentBlock] = Field(default_factory=list)
 
 
 class BoostLesson(BoostEntity):
@@ -109,7 +195,11 @@ class BoostLesson(BoostEntity):
 
 class QuestionOption(BoostModel):
     id: str
-    text: str
+    # §13.4's new shape: an option carries ``blocks`` instead of plain ``text``.
+    # Neither field is required on its own, so an option with only one of them
+    # (old-shape ``text``-only, or new-shape ``blocks``-only) still parses.
+    text: str | None = None
+    blocks: list[ContentBlock] = Field(default_factory=list)
 
 
 class QuestionShared(BoostModel):
@@ -121,11 +211,16 @@ class QuestionShared(BoostModel):
     points: int | None = None
     media_id: str | None = None
     media_type: str | None = None
+    # §13.4 (new).
+    topic_key: str | None = None
 
 
 class QuestionTranslation(BoostModel):
     question_text: str | None = None
     options: list[QuestionOption] = Field(default_factory=list)
+    # §13.4 (new): the prompt as a block list, required and text-first per §4.6 —
+    # not enforced here (Boost's own publish-time validation owns that rule).
+    prompt: list[ContentBlock] = Field(default_factory=list)
 
 
 class BoostQuestion(BoostEntity):
@@ -142,6 +237,19 @@ class BoostPage[ItemT: BoostModel](BoostModel):
     page: int = Field(ge=1)
     page_size: int = Field(ge=1)
     as_of: datetime | None = None
+
+
+class BoostBatchResponse[ItemT: BoostModel](BoostModel):
+    """A revisions-batch response (§13.2, endpoints 5/6): ``{items, missing}``.
+
+    Unlike ``BoostPage``, a batch call never fails for a ref that doesn't exist
+    or isn't published — it lands in ``missing`` (``"{id}:{version}"`` strings)
+    instead, so one bad ref in an attempt's question set never fails the whole
+    batch.
+    """
+
+    items: list[ItemT]
+    missing: list[str] = Field(default_factory=list)
 
 
 class BoostProblem(BoostModel):
