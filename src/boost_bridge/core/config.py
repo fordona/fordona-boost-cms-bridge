@@ -85,7 +85,34 @@ class Settings(BaseSettings):
     # --- Locale ------------------------------------------------------------
     default_locale: str = "sv-SE"
 
-    _split = field_validator("cors_allowed_origins", "kinde_audience", mode="before")(_split_csv)
+    # --- Engine (fordona-engine, internal API) ------------------------------
+    engine_base_url: AnyHttpUrl = AnyHttpUrl("http://engine.internal:8080")
+    # Required outside "local" (Plan §7.4, PA DD-04) — the engine checks this same
+    # value as X-Fordona-Internal-Token on every /internal/theory/** call.
+    engine_internal_token: SecretStr = SecretStr("")
+    engine_read_timeout: float = Field(default=2.0, gt=0)
+    engine_phase_complete_timeout: float = Field(default=5.0, gt=0)
+    engine_pool_max_connections: int = Field(default=20, ge=1)
+
+    # --- Boost batching / prefetch ------------------------------------------
+    boost_batch_max_refs: int = Field(default=100, ge=1)
+    content_prefetch_on_release: bool = False
+
+    # --- Media (signed CDN URLs) --------------------------------------------
+    media_cdn_base_url: AnyHttpUrl = AnyHttpUrl("https://media.fordona.io")
+    # Server-side only; never ship to a client. HMAC key for signing media URLs.
+    media_signing_key: SecretStr = SecretStr("")
+    media_signed_url_ttl_seconds: int = Field(default=3600, ge=1)
+    # Unit ids (decimal-string ContentIds) whose media is never signed — the free unit.
+    media_free_unit_ids: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    # --- Rate limiting -------------------------------------------------------
+    rate_limit_read_per_minute: int = Field(default=120, ge=1)
+    rate_limit_write_per_minute: int = Field(default=30, ge=1)
+
+    _split = field_validator(
+        "cors_allowed_origins", "kinde_audience", "media_free_unit_ids", mode="before"
+    )(_split_csv)
 
     @field_validator("default_locale")
     @classmethod
@@ -118,6 +145,11 @@ class Settings(BaseSettings):
                 "BOOST_AUTH_MODE=forward_learner_token needs AUTH_ENABLED=true: "
                 "there is no learner token to forward otherwise"
             )
+        if self.app_env is not Environment.LOCAL:
+            if not self.engine_internal_token.get_secret_value():
+                raise ValueError("ENGINE_INTERNAL_TOKEN is required when APP_ENV is not 'local'")
+            if not self.media_signing_key.get_secret_value():
+                raise ValueError("MEDIA_SIGNING_KEY is required when APP_ENV is not 'local'")
         return self
 
     @property

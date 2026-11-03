@@ -51,7 +51,7 @@ def test_service_token_mode_requires_delivery_token() -> None:
 
 
 def test_forward_mode_is_default_and_needs_no_delivery_token() -> None:
-    settings = _settings(**_AUTH, app_env="prod")
+    settings = _settings(**_AUTH, app_env="prod", engine_internal_token="t", media_signing_key="t")
     assert settings.boost_auth_mode is BoostAuthMode.FORWARD_LEARNER_TOKEN
 
 
@@ -73,7 +73,14 @@ def test_unknown_default_locale_rejected() -> None:
 def test_log_format_defaults_by_environment() -> None:
     assert _settings(**_AUTH).effective_log_format == "console"
     assert (
-        _settings(**_AUTH, app_env="prod", boost_delivery_token="t").effective_log_format == "json"
+        _settings(
+            **_AUTH,
+            app_env="prod",
+            boost_delivery_token="t",
+            engine_internal_token="t",
+            media_signing_key="t",
+        ).effective_log_format
+        == "json"
     )
 
 
@@ -110,3 +117,40 @@ def test_no_boundary_warnings_for_service_token_and_fordona_audience() -> None:
         boost_delivery_token="t",
     )
     assert settings.access_boundary_warnings == []
+
+
+def test_engine_token_required_outside_local() -> None:
+    with pytest.raises(ValidationError, match="ENGINE_INTERNAL_TOKEN"):
+        _settings(
+            **_AUTH,
+            app_env="prod",
+            boost_delivery_token="t",
+            boost_auth_mode="service_token",
+            media_signing_key="t",
+        )
+
+
+def test_engine_token_not_required_locally() -> None:
+    settings = _settings(**_AUTH, app_env="local")
+    assert settings.engine_internal_token.get_secret_value() == ""
+
+
+def test_media_signing_key_required_outside_local() -> None:
+    with pytest.raises(ValidationError, match="MEDIA_SIGNING_KEY"):
+        _settings(
+            **_AUTH,
+            app_env="prod",
+            boost_delivery_token="t",
+            boost_auth_mode="service_token",
+            engine_internal_token="t",
+        )
+
+
+def test_engine_token_secret_is_not_rendered() -> None:
+    settings = _settings(**_AUTH, engine_internal_token="super-secret-engine-token")
+    assert "super-secret-engine-token" not in repr(settings)
+
+
+def test_media_free_unit_ids_split_as_csv() -> None:
+    settings = _settings(**_AUTH, media_free_unit_ids="1, 2, 3")
+    assert settings.media_free_unit_ids == ["1", "2", "3"]
