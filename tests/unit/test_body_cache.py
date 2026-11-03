@@ -223,6 +223,31 @@ async def test_lesson_cache_miss_fetches_and_caches_forever(
 
 
 @respx.mock
+async def test_cached_lesson_body_holds_asset_ids_only_never_a_signed_url(
+    body_cache: BodyCache, redis: FakeAsyncRedis
+) -> None:
+    """Plan §4.6: "blocks carry asset ids, never URLs." Signing (P6.T4) only ever
+    happens when a response is built, well after this cache has already stored
+    Boost's raw JSON — so there is no code path here that could write a signed
+    URL into Redis in the first place, which this test confirms directly rather
+    than only by inspecting the (separate) resolver's own code.
+    """
+    payload = lesson_payload(lesson_id="10", locale=LOCALE)
+    payload["translation"]["blocks"] = [{"type": "image", "assetId": "77", "alt": "Give-way sign"}]
+    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(json=payload)
+
+    await body_cache.get_lesson_revision("10", "2", LOCALE)
+
+    key = body_cache_key("LESSON", "10", "2", LOCALE)
+    raw = await redis.get(key)
+    assert raw is not None
+    assert b'"77"' in raw  # the asset id is there
+    assert b"sig=" not in raw
+    assert b"exp=" not in raw
+    assert b"media.test" not in raw  # no CDN base URL of any kind
+
+
+@respx.mock
 async def test_lesson_not_found_raises_content_not_found(body_cache: BodyCache) -> None:
     respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(404, json=problem_payload(404))
 

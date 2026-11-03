@@ -103,7 +103,8 @@ class Settings(BaseSettings):
     media_cdn_base_url: AnyHttpUrl = AnyHttpUrl("https://media.fordona.io")
     # Server-side only; never ship to a client. HMAC key for signing media URLs.
     media_signing_key: SecretStr = SecretStr("")
-    media_signed_url_ttl_seconds: int = Field(default=3600, ge=1)
+    # Plan §9.5: "Signed URLs | TTL 2 h covers a long lesson."
+    media_signed_url_ttl_seconds: int = Field(default=7200, ge=1)
     # Unit ids (decimal-string ContentIds) whose media is never signed — the free unit.
     media_free_unit_ids: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
