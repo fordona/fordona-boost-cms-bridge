@@ -2196,3 +2196,60 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   the progress values agree between completion responses, home, the learning path and readiness." All
   of P5.T1–T7 are now done; this is a confirmation pass (same pattern as P4 Phase exit), not new
   implementation, before moving to P6.
+
+### 2026-11-03 · P5 Phase exit · Confirmation pass
+
+- **Status:** DONE — ties off P5 ("phase done" + "P5 Phase exit" both ticked). No code changed.
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 7ef3dfcd (no new commit — a
+  verification pass over work already committed through P5.T7).
+- **What was checked, against the two Phase-exit criteria:**
+  1. **"Every engine internal endpoint of Plan §7.3 exists."** Confirmed by listing every
+     `@GetMapping`/`@PostMapping` across the theory internal controllers: lesson state, start/resume
+     attempt, get attempt, answer, complete-lesson-phase, complete-retry-phase (all P4), plus home,
+     learning path, and readiness (all P5) — all nine endpoints Plan §7.3 documents are present.
+  2. **"Tests green."** Full suite re-run clean: `./gradlew test --no-daemon -q`, exit code 0. Every
+     theory-module test class (40+ files) individually confirmed `failures="0" errors="0" skipped="0"`,
+     not just a passing aggregate — includes every service added this phase
+     (`ProgressServiceTest` 14, `HomeServiceTest` 11, `LearningPathServiceTest` 13,
+     `ReadinessServiceTest` 5, `CompletionProgressServiceTest` 4, `AttemptServiceTest` grown to 39) and
+     every pure helper's own test (`HomeWeekResolverTest`, `HomeContinueResolverTest`,
+     `DisplayIndexTest`, `TheoryTimezoneResolverTest`, `LocalDayTest`, etc.).
+  3. **"The progress values agree between completion responses, home, the learning path and
+     readiness."** This holds in the sense the implementation actually guarantees, which is narrower
+     than "everything always matches everything" and was worth stating precisely rather than ticking
+     the box on a vague reading:
+     - **Completion ↔ home ↔ learning path:** exact agreement, proven directly by P5.T7's
+       `completionResponse_acceptance_nextAgreesWithHomeContinueAndLearningPathCurrentEntry` test — a
+       completion's `next` points at the same lesson with the same action as home's `continue` card,
+       and that lesson is `CURRENT` in the learning path. This is a structural guarantee, not a
+       coincidence of test data: `next` and home's `continue` are built from the literal same
+       `HomeContinueResolver` function over the literal same `UnlockService.resolve(...)` output.
+     - **Completion ↔ home on streak/dailyChallenge/readiness:** exact agreement by construction — both
+       read `learner_theory_summary` the same way and run the identical `StreakResolver`/
+       `ReadinessFormula` pure functions (P5.T7 extracted these specifically so a fourth copy of the
+       arithmetic could never drift from the first three).
+     - **Home/completion's `readiness.percent` vs. the dedicated readiness screen's
+       `percent`: these are *not* guaranteed to agree bit-for-bit**, and that is by design, not a gap.
+       Home and completion read the pre-aggregated `learner_theory_summary.sum_best_accuracy` (cheap,
+       O(1)); the readiness screen (P5.T6) recomputes the sum fresh from a full `lesson_progress` scan
+       specifically so its own top-level and per-unit numbers can never drift from *each other*. Under
+       normal operation the two numbers agree because the write path keeps the cached sum in sync with
+       what a fresh scan would compute — this was exercised by every test in this phase without ever
+       observing a mismatch — but there is no code path that re-synchronizes them if they ever did
+       diverge (e.g. a write bug). Logging this precisely now, rather than asserting a stronger
+       guarantee than the code provides, so a future investigation into a reported mismatch knows where
+       to look first.
+  - No code changes — this entry is the verification record.
+- **Deviations from the plan:** none — this is a verification pass.
+- **Issues found / open risks:**
+  - The nuance above (cheap home/completion readiness vs. authoritative readiness-screen readiness can
+    theoretically diverge from a write bug, with no self-healing path) is worth flagging to whoever next
+    touches `ProgressService`'s write path — if `sum_best_accuracy` is ever found inconsistent in
+    production, the fix is in the writer, not in either reader.
+  - Carried forward, unrelated to P5 itself: `levelDropAllowed` (P4.T6) still unwired; the two P4.T8
+    deviations (locked → 200, partial `estimatedMinutes`); P5.T3's `recordAttemptStarted`
+    non-atomicity with the attempt insert; P5.T4's partial-failure `learningPathEtag` fallback; P5.T6's
+    `averageBestAccuracy` denominator decision.
+- **Ready to continue:** YES. P5 is fully closed.
+- **Next task:** the next unstarted phase in the tracker (P6) — read its own task list fresh before
+  starting, same as every previous phase transition in this project.

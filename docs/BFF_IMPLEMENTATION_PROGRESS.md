@@ -668,7 +668,7 @@ every repository the plan touches:
 
 ## P5. Engine: progress, home, learning path, readiness
 
-- [ ] **P5 — phase done**
+- [x] **P5 — phase done**
 
 - [x] **P5.T1 Migrations: progress tables** · Repo: ENG · Dep: P4 · Plan §5.7, §6
   - [x] `V1_0_19__theory_progress.sql`:
@@ -770,7 +770,7 @@ every repository the plan touches:
   - **Tests:** the values equal what a following `GET home` returns.
   - **Acceptance:** a full flow ends with the next lesson `current` in the learning path and `START` on home.
 
-- [ ] **P5 Phase exit:** every engine internal endpoint of Plan §7.3 exists, with tests green; the progress values
+- [x] **P5 Phase exit:** every engine internal endpoint of Plan §7.3 exists, with tests green; the progress values
   agree between completion responses, home, the learning path and readiness.
 
 ---
