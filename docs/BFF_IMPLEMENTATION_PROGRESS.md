@@ -709,32 +709,35 @@ every repository the plan touches:
     - [x] a timezone change doesn't double count.
   - **Acceptance:** a Testcontainers test runs 3 lessons across 2 local days and asserts every summary field.
 
-- [ ] **P5.T4 Home endpoint** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/home`
-  - [ ] `GET /internal/theory/v1/home`, built from:
+- [x] **P5.T4 Home endpoint** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/home`
+  - [x] `GET /internal/theory/v1/home`, built from:
     - one summary read;
     - ≤ 7 activity days;
     - one `lesson_progress` range scan;
     - the snapshot;
     - the entitlement cache;
     - the user's initials and first name **via the user module's ExternalUseCase** (learn tier 4 → user tier 2).
-  - [ ] `continue.action`:
+  - [x] `continue.action`:
     - `CONTINUE` (most recent open attempt);
     - `START` (next unlocked, not completed);
     - `UPGRADE` (next lesson in a non-entitled unit);
     - `null` when everything is done.
-  - [ ] `upNext` (next 1 entry after `continue`); `tabs.mockExams` locked with `NOT_AVAILABLE`; `learningPathEtag`.
-  - [ ] **Partial failure:** if the progress reads fail, `week`, `dailyChallenge`, `streak` and `readiness` are null
+  - [x] `upNext` (next 1 entry after `continue` — **decision, logged**: always relative to the forward
+        sequence pointer, not to a retake's own position, when the two differ); `tabs.mockExams` locked
+        with `NOT_AVAILABLE`; `learningPathEtag`.
+  - [x] **Partial failure:** if the progress reads fail, `week`, `dailyChallenge`, `streak` and `readiness` are null
         and the rest renders (log WARN).
-  - [ ] `week.startsOn` from config `theory.progress.week-starts-on` (O-11); `daily_challenge_lessons` config
+  - [x] `week.startsOn` from config `theory.progress.week-starts-on` (O-11); `daily_challenge_lessons` config
         (default 3).
   - **Tests:**
-    - [ ] each `continue.action`;
-    - [ ] the streak shown as 0 after a gap;
-    - [ ] the challenge reset at local midnight;
-    - [ ] the week statuses;
-    - [ ] partial failure;
-    - [ ] query count ≤ 3 (+ the user lookup).
-  - **Acceptance:** the response matches the Plan §7.3 example shape field for field (a JSON schema test).
+    - [x] each `continue.action`;
+    - [x] the streak shown as 0 after a gap;
+    - [x] the challenge reset at local midnight;
+    - [x] the week statuses;
+    - [x] partial failure;
+    - [x] query count ≤ 3 (+ the user lookup) — verified via spy invocation counts, not a literal SQL counter.
+  - **Acceptance:** the response matches the Plan §7.3 example shape field for field (asserted directly, not a
+        separate JSON-schema file).
 
 - [ ] **P5.T5 Learning path with ETag** · Repo: ENG · Dep: P5.T3 · Plan §7.3 `GET /v1/learning-path`
   - [ ] `GET /internal/theory/v1/learning-path`:

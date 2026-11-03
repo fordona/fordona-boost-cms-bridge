@@ -1920,3 +1920,93 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
     deviations (locked → 200, partial `estimatedMinutes`) still worth a plan-owner confirmation.
 - **Ready to continue:** YES.
 - **Next task:** P5.T4 (home endpoint) — depends on P5.T3, which is now done. Plan §7.3 `GET /v1/home`.
+
+### 2026-11-03 · P5.T4 · Home endpoint
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · c7f01699
+- **What was done:**
+  - `GET /internal/theory/v1/home` (new `TheoryHomeInternalController`) → `HomeService.getHome(userId,
+    timezoneHeader, acceptLanguageHeader)`. Reads: one `lesson_progress` range scan
+    (`ProgressStore#findAllLessonProgress`, new), one summary read, one activity-day range scan bounded
+    to the current local week (both new store methods), the in-memory `ContentSnapshot`, and
+    `TheoryEntitlement#isUnitEntitled`/`#isSubscribed` (the latter a new one-line delegate to the
+    already-cached `TheorySubscriptionCache`). The user's name comes from `AppUserExternalUseCase
+    #getAppUserById` (learn tier 4 → user tier 2, via the interface, never the concrete service —
+    CLAUDE.md's cross-module rule) — initials are the first letters of `firstName`/`lastName`,
+    uppercased.
+  - Three new pure helpers, all unit-tested in isolation with no Spring context or database:
+    - `DisplayIndex`: `ofUnit`/`ofLesson` recompute a 1-based rank from the snapshot's own sort order on
+      every call — confirmed (test `ofLesson_isUnitRankDotLessonRank_notTheRawSortValue`) that this is a
+      *rank*, not the raw `sort` column value, so a gap from a hidden lesson never produces a gap in
+      `displayIndex` either.
+    - `HomeWeekResolver`: the 7-day activity strip. Parameterized on `today` (a `LocalDate`), not
+      `Instant.now()`, specifically so week-boundary behaviour is testable without mocking the system
+      clock — the same testability reasoning P5.T2's `LocalDay` already established.
+    - `HomeContinueResolver`: `continue.action` (`CONTINUE`/`START`/`UPGRADE`, or empty when everything's
+      done) and `upNext`.
+  - `lesson_progress.status = 'COMPLETED'` rows (from the new range-scan read, not `lesson_attempt`)
+    feed `UnlockService.resolve(...)` for `completedLessonIds` — reusing the denormalized progress table
+    exactly as Plan §7.3's own home read-path list intends, rather than re-querying `lesson_attempt`
+    (which would silently blow the "≤ 3 queries" budget by being a 4th read, and was never in that
+    list).
+  - `TheoryProgressProperties` (new `@ConfigurationProperties(prefix = "theory.progress")`):
+    `weekStartsOn` (`DayOfWeek`, default `SUNDAY`) and `dailyChallengeLessons` (default 3), both with env
+    var overrides in `application.yml`.
+- **Two decisions logged, not guessed past:**
+  1. **`upNext` is always relative to the forward-progress pointer, never to whatever `continue` itself
+     shows.** Plan §7.3 only says "next 1 entry after continue," which doesn't address the case where
+     `continue` is a retake of an *already-completed* lesson (its own open attempt, most recently
+     touched) while a *different*, later lesson is the learner's actual next step in sequence. Showing
+     "up next" relative to the retake's own position would be confusing (it could even point backward in
+     the course). `HomeContinueResolver.resolveUpNext` always computes from the first not-yet-completed
+     lesson in the global walk, independent of `continue`'s own target — tested explicitly
+     (`resolveUpNext_independentOfOpenAttemptElsewhere`).
+  2. **The displayed streak is recomputed live, not read straight off `learner_theory_summary
+     .current_streak`.** Plan §5.7's own definition: *"Consecutive active days ending today or
+     yesterday. If the last active day is older, the streak shown is 0."* But the stored
+     `current_streak` is only recomputed at the *next* lesson completion (P5.T3's write path) — so a
+     learner who did nothing today or yesterday would see a stale nonzero number if `HomeService` just
+     passed the stored value through. `HomeService` checks `lastActiveDate` against `today` itself and
+     overrides to 0 when the gap exceeds one day, confirmed by test
+     `getHome_streakAfterAGap_isShownAsZero`. This is a real behavioural fix caught while implementing
+     this task, not present in P5.T3's own write-path code (which doesn't need to care, since it only
+     runs exactly when a completion happens, never on a quiet day).
+  3. **`entitlement_hash` (in `learningPathEtag`) is `"sub"`/`"free"`, a two-value hash.** Plan §6's own
+     `"{release_id}.{progress_version}.{entitlement_hash}.{locale}"` format doesn't define what
+     `entitlement_hash` hashes over, and `TheoryEntitlement`'s own model (Plan §5.1/P4.T2) is binary —
+     subscribed learners are entitled everywhere, free learners only to the first unit — so there is no
+     richer per-unit entitlement state to hash yet. Using anything more elaborate here would fabricate
+     granularity the entitlement model doesn't have. Revisit if/when entitlement ever becomes genuinely
+     per-unit.
+- **Tests:**
+  - `DisplayIndexTest` (3), `HomeWeekResolverTest` (7), `HomeContinueResolverTest` (9) — all pure, no
+    Spring context.
+  - `HomeServiceTest` (11, real Postgres via `IntegrationTestBase`, builds its own `HomeService` with a
+    mocked snapshot/entitlement/`AppUserExternalUseCase` for the same global-ordering reason
+    `AttemptServiceTest` documents): each `continue.action` (`START`/`CONTINUE`/`UPGRADE`/`null` when
+    everything's done); `upNext` is the lesson after the current one; `tabs.mockExams` always locked
+    `NOT_AVAILABLE` and `tabs.learningPath` never locked; the user block resolves initials/first name
+    from the mocked `AppUserExternalUseCase`; the streak-after-a-gap fix above; `learningPathEtag` has
+    the documented 4-dot-separated-parts shape; a `ProgressStore` that throws on
+    `findAllLessonProgress` degrades `week`/`dailyChallenge`/`streak`/`readiness`/`continue`/`upNext` to
+    null/empty while `tabs`/`user` still render (continue/upNext need `lesson_progress` too, so they're
+    correctly included in what goes null here, which the tracker's own "the rest renders" wording leaves
+    slightly open — logged as this task's reading: "the rest" means what doesn't depend on progress
+    reads at all, not literally everything except the four named fields); and a spy-based check that
+    `findAllLessonProgress`/`findSummary`/`findActivityDaysInRange` are each called exactly once per
+    request (the "≤ 3 queries" acceptance line, verified at the store-call level rather than counting
+    literal SQL statements, since this codebase has no query-counting test harness).
+  - Full suite: `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** the three decisions above, all logged rather than silently resolved.
+- **Issues found / open risks:**
+  - The partial-failure branch's `learningPathEtag` fallback (`"{release_id}.0.free.{locale}"`) is a
+    pragmatic choice for an edge case the plan doesn't address: if progress reads fail, there's no real
+    `progress_version` to put in the ETag. Using `0` means a client caching the learning path from before
+    the failure might skip one needed refresh after recovery — a minor, self-correcting staleness, not a
+    data-safety issue, but worth knowing if it ever comes up in practice.
+  - Carried forward, unrelated to this task: `levelDropAllowed` (P4.T6) still unwired; the two P4.T8
+    deviations (locked → 200, partial `estimatedMinutes`) still worth a plan-owner confirmation; P5.T3's
+    `recordAttemptStarted` non-atomicity with the attempt insert.
+- **Ready to continue:** YES.
+- **Next task:** P5.T5 (learning path with ETag) — depends on P5.T3 (done). Plan §7.3 `GET /v1/learning-path`.
