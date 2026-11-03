@@ -2923,3 +2923,42 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Next task:** P7.T2 (load test, k6) and P7.T3 (observability) both depend on P6.T8 (undone,
   external) — blocked. P7.T4 depends on P7.T3 — also blocked. No further P7 task is currently
   unblocked; P6.T8 needs to happen (externally) before P7 can continue past T1.
+
+### 2026-11-03 · Owner-provided · New Boost staging credentials received and verified
+
+- **Status:** INFO (not a tracker task — logged because it changes a key P6.T8/P3 assumption)
+- **What happened:** the owner received three new tokens from the Boost owner
+  (`BOOST_SERVICE_TOKEN`, `BOOST_GRADING_TOKEN`, `BOOST_PRODUCER_TOKEN`) plus a staging URL. Finding
+  the actual API origin took three guesses (`boost-dev.fordona.dev` served the CMS **website**, HTML
+  not JSON; `boost-api.fordona.io`, the production host, gave a real `401`; `boost-api-dev.fordona.dev`
+  initially 404'd on the §13 paths the contract suite probes). The owner's own `/openapi.json` on that
+  last host (title "Fordona Boost owned CMS") confirmed it as the real API; direct `curl` calls then
+  confirmed both tokens work: `BOOST_SERVICE_TOKEN` gets 200 on `/v1/delivery/modules` and
+  `/v1/delivery/questions`, 401 on `/v1/grading/**` (correctly delivery-scoped only);
+  `BOOST_GRADING_TOKEN` gets 200 on `/v1/grading/questions/1/revisions/1`.
+- **Saved (local-only, gitignored, never committed):**
+  - `fordona-boost-cms-bridge/.env`: `BOOST_BASE_URL=https://boost-api-dev.fordona.dev`,
+    `BOOST_AUTH_MODE=service_token` (changed from `forward_learner_token` — needed for
+    `BOOST_DELIVERY_TOKEN` to actually be used at all), `BOOST_DELIVERY_TOKEN=<the service token>`.
+  - `fordona-engine/.env` (new file — none existed before): `THEORY_BOOST_BASE_URL`,
+    `THEORY_BOOST_DELIVERY_TOKEN`, `THEORY_BOOST_GRADING_TOKEN`. Deliberately partial — the engine's
+    other required vars (DB, Kinde, R2, Mollie, Swish, Sentry, OTEL) are not in it.
+  - `BOOST_PRODUCER_TOKEN` was **not saved anywhere** — neither repo has a config key for it, and
+    neither the owner nor (at the time) the Boost owner's message clarified what it's for. Still only
+    in the chat transcript; needs a destination identified before it's worth storing.
+- **A real finding, not just plumbing: the real Boost staging deployment does not implement §13 yet.**
+  Its own `/openapi.json` lists 92 paths; comparing them against what this codebase depends on:
+  **missing** — `/v1/delivery/changes` (the change feed `ContentSyncService` polls),
+  `/v1/delivery/question-templates` (+ revision), `/v1/delivery/lessons/{id}/revisions/{version}`
+  (lesson theory — `BodyCache.get_lesson_revision`), `/v1/delivery/questions/revisions` (batch body
+  hydration — `BodyCache.get_question_revisions`), `/v1/grading/questions/revisions` (batch grading),
+  `/v1/delivery/topics`. **Present** — plain `modules`/`lessons`/`questions` lists, the *singular*
+  question and grading revision routes. This matches what P2.T1's entry already said on 2026-11-02
+  ("Boost itself implementing §13 (P9.T1) is the only thing left") — it's still true now that staging
+  exists, just confirmed freshly against a real, reachable host rather than assumed. Concretely: the
+  engine's content sync and the BFF's body cache cannot function against this real deployment today,
+  only against the stub — this is a hard blocker for any part of P6.T8/P7 that would point either
+  service at real Boost instead of the stub, independent of whatever Dokploy/infra work P6.T8 itself
+  needs.
+- **Ready to continue:** YES, against the stub as before. Pointing either service at real Boost for
+  anything beyond the already-working single-item/list routes still waits on P9.T1.
