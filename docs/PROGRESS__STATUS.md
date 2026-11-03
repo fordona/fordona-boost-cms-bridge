@@ -2705,3 +2705,62 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P6.T6 (rate limiting) — a per-learner Redis token bucket, separate read/write buckets,
   429 RFC 7807 with `Retry-After`. Depends on P6.T5 (now done).
+
+### 2026-11-03 · P6.T6 · Rate limiting
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF (fordona-boost-cms-bridge) · feat/theory-app-implementations · f8652e4
+- **What was done:**
+  - New `cache/rate_limit.py` (`RateLimiter`): a **fixed one-minute-window counter** per
+    `(kind, learner sub, window)`, not a continuously-refilling token bucket. Not a deviation requiring
+    a decision — the tracker's own acceptance bullets (limit reached → 429; separate buckets per
+    learner; separate read/write buckets) say nothing about smoothing or burst behaviour, a fixed
+    window satisfies all three exactly, and it's built from the same plain `INCR`/`EXPIRE` primitives
+    (and the same fail-open-on-`RedisError`/`OSError` style) every other cache in this service already
+    uses — no new Lua-script or sorted-set machinery for a feature with no stated smoothing requirement.
+  - New `RateLimitedError` (`core/errors.py`): 429, `errorCode=RATE_LIMITED`, `Retry-After` header set
+    from the window's remaining TTL (falls back to the full window length if Redis's own `TTL` call
+    itself fails, so the header is never absent).
+  - `api/deps.py`: `enforce_read_rate_limit`/`enforce_write_rate_limit` (exposed as `ReadRateLimit`/
+    `WriteRateLimit`), each depending on the already-resolved `CurrentLearner` so the check is keyed on
+    the verified JWT `sub`, never a client-supplied value. FastAPI's per-request dependency caching
+    means `get_current_learner` still runs exactly once per request even though both the route and the
+    rate-limit dependency reference it.
+  - Added to every one of the 9 routes: `ReadRateLimit` on `GET /home`, `GET /learning-path`,
+    `GET /readiness`, `GET /lessons/{lessonId}`, `GET /attempts/{attemptId}`; `WriteRateLimit` on the
+    remaining 4 (attempt start, answer, both phase completions) — matching the tracker's own
+    "starts, responses, completions" grouping for the write bucket.
+  - `container.py` builds one `RateLimiter` from the same Redis client `RedisCache` wraps, sized from
+    the existing `RATE_LIMIT_READ_PER_MINUTE`/`RATE_LIMIT_WRITE_PER_MINUTE` settings (already present
+    since P6.T1, unused until now).
+  - `api/responses.py`: added a 429 entry to every route's documented error set.
+  - `tests/conftest.py`'s `harness_factory` now builds a real `RateLimiter` against the same
+    `fakeredis` instance `BodyCache`/`AttemptRefCache` use, so API tests can override
+    `rate_limit_read_per_minute`/`rate_limit_write_per_minute` per test via the existing
+    `**setting_overrides` mechanism.
+- **Tests:**
+  - `tests/unit/test_rate_limit.py` (5): within-limit requests pass; exceeding the limit returns
+    `allowed=False` with a positive `retry_after_seconds`; buckets are separate per learner and per
+    kind; a Redis failure (`incr` raising `ConnectionError`, itself an `OSError` subclass) fails open.
+  - `tests/api/test_theory_rate_limit.py` (3, full stack via `respx` + the real `RateLimiter`): a second
+    request past a `rate_limit_read_per_minute=1` override on `GET /v1/home` is 429 with `errorCode`
+    `RATE_LIMITED` and a positive `Retry-After`; a read and a write call each succeed under a
+    limit of 1 apiece (proving the buckets are genuinely separate, not shared); two different
+    learners (`sub` overridden via `harness.auth(sub=...)`) each get their own bucket.
+  - Full gate: `uv run pytest -q` → 423 passed, 52 skipped (8 new); `uv run ruff check .` /
+    `uv run ruff format --check .` → clean; `uv run mypy src scripts` → clean on 75 source files;
+    `uv run lint-imports --config pyproject.toml` → the `boost_bridge`/`boost_stub` contract still kept.
+- **Deviations from the plan:** none requiring a logged decision — "fixed window, not token bucket" is
+  an implementation-detail choice within what the tracker's own tests actually require, not a
+  deviation from a documented behaviour.
+- **Issues found / open risks:**
+  - A fixed window (vs. a true token bucket) allows a burst of up to `2 × limit` requests across a
+    window boundary (e.g. `limit` requests at `0:59` and another `limit` at `1:00`). Plan §7.3 doesn't
+    specify smoothing, so this is acceptable for this release; revisit only if staging load testing
+    (P7.T2) shows it matters.
+  - This is still **per-instance** in the sense that it shares fate with Redis being a single logical
+    store (already true for the rest of this service's caches) — not a new scaling gap introduced here.
+- **Ready to continue:** YES.
+- **Next task:** P6.T7 (release prefetch, optional/off by default) — depends on P6.T3 (done). After
+  that, P6.T8 (deploy BFF + stub + engine together on staging, Repo: EXT) depends on both P6.T5 and
+  P6.T6, both now done.

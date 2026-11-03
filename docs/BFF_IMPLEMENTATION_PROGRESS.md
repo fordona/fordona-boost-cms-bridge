@@ -882,8 +882,11 @@ every repository the plan touches:
   - **Acceptance:** `test_route_table_matches_the_public_surface` pins the OpenAPI document at `/openapi.json`
         to exactly the 9 public endpoints + health.
 
-- [ ] **P6.T6 Rate limiting** · Repo: BFF · Dep: P6.T5 · Plan §7.3
-  - [ ] A per-learner (JWT `sub`) Redis token bucket. Read routes use `RATE_LIMIT_READ_PER_MINUTE`; write routes
+- [x] **P6.T6 Rate limiting** · Repo: BFF · Dep: P6.T5 · Plan §7.3 — DONE (2026-11-03): a fixed
+  one-minute-window Redis counter per `(kind, learner sub)`, not a continuously-refilling token bucket —
+  simpler, same plain `INCR`/`EXPIRE`/fail-open style as every other cache here, and it satisfies the
+  tracker's own acceptance bullets exactly. 423 passed, 52 skipped; ruff/mypy/lint-imports clean.
+  - [x] A per-learner (JWT `sub`) Redis token bucket. Read routes use `RATE_LIMIT_READ_PER_MINUTE`; write routes
         (starts, responses, completions) use `RATE_LIMIT_WRITE_PER_MINUTE`. Return 429 RFC 7807 with `Retry-After`.
   - **Unit tests:** limit reached → 429; separate buckets per learner; separate buckets read/write.
 
