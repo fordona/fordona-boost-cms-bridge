@@ -15,6 +15,7 @@ the engine to change shape — the per-item ``phase`` field exists precisely to
 make that split possible.
 """
 
+import asyncio
 from uuid import UUID
 
 from boost_bridge.cache.attempt_refs import AttemptRefCache
@@ -46,6 +47,7 @@ from boost_bridge.services import theory_mappers as mappers
 from boost_bridge.services.blocks import render_blocks
 from boost_bridge.services.body_cache import BodyCache, QuestionRef
 from boost_bridge.services.media import AssetUrlResolver
+from boost_bridge.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 
 
 class TheoryService:
@@ -55,16 +57,26 @@ class TheoryService:
         body_cache: BodyCache,
         attempt_refs: AttemptRefCache,
         resolver: AssetUrlResolver,
+        *,
+        prefetch_gate: ReleasePrefetchGate | None = None,
+        prefetch_runner: ReleasePrefetchRunner | None = None,
     ) -> None:
         self._engine = engine
         self._bodies = body_cache
         self._attempt_refs = attempt_refs
         self._resolver = resolver
+        # Both None unless CONTENT_PREFETCH_ON_RELEASE=true (Plan §9.1/§9.4, P6.T7) —
+        # kept as a pair rather than one "enabled" flag so a disabled feature costs
+        # this service nothing beyond the None check below, no Redis call included.
+        self._prefetch_gate = prefetch_gate
+        self._prefetch_runner = prefetch_runner
+        self._prefetch_tasks: set[asyncio.Task[None]] = set()
 
     # --- Home, learning path, readiness ----------------------------------------
 
     async def home(self, *, locale: str, timezone: str | None) -> HomeOut:
         engine_home = await self._engine.get_home(accept_language=locale, timezone=timezone)
+        await self._maybe_prefetch(engine_home.learning_path_etag)
         return mappers.map_home(engine_home)
 
     async def learning_path(
@@ -73,6 +85,8 @@ class TheoryService:
         path, etag, not_modified = await self._engine.get_learning_path(
             accept_language=locale, if_none_match=if_none_match
         )
+        if etag:
+            await self._maybe_prefetch(etag)
         if not_modified or path is None:
             return None, etag, True
         return mappers.map_learning_path(path), etag, False
@@ -182,6 +196,16 @@ class TheoryService:
         return mappers.map_retry_phase_completion(completion)
 
     # --- internals -----------------------------------------------------------------
+
+    async def _maybe_prefetch(self, etag: str) -> None:
+        if self._prefetch_gate is None or self._prefetch_runner is None:
+            return
+        release_id = await self._prefetch_gate.claim(etag)
+        if release_id is None:
+            return
+        task = asyncio.create_task(self._prefetch_runner.run(release_id))
+        self._prefetch_tasks.add(task)
+        task.add_done_callback(self._prefetch_tasks.discard)
 
     async def _build_attempt_out(
         self, attempt: EngineAttempt, *, lesson_id: str | None, locale: str

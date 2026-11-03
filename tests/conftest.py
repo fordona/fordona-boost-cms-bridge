@@ -38,6 +38,7 @@ from boost_bridge.core.security import JwksCache, TokenVerifier
 from boost_bridge.main import create_app
 from boost_bridge.services.body_cache import BodyCache
 from boost_bridge.services.media import build_asset_url_resolver
+from boost_bridge.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 from boost_bridge.services.theory_service import TheoryService
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
 
@@ -128,11 +129,20 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         hard_ttl_seconds=s.cache_hard_ttl_seconds,
                         negative_ttl_seconds=s.cache_negative_ttl_seconds,
                     )
+                    boost_client = BoostClient.from_settings(boost_http, s)
                     body_cache = BodyCache(
-                        BoostClient.from_settings(boost_http, s),
-                        redis_cache,
-                        batch_max_refs=s.boost_batch_max_refs,
+                        boost_client, redis_cache, batch_max_refs=s.boost_batch_max_refs
                     )
+                    prefetch_gate: ReleasePrefetchGate | None = None
+                    prefetch_runner: ReleasePrefetchRunner | None = None
+                    if s.content_prefetch_on_release:
+                        prefetch_gate = ReleasePrefetchGate(redis_cache)
+                        prefetch_runner = ReleasePrefetchRunner(
+                            boost_client,
+                            body_cache,
+                            batch_max_refs=s.boost_batch_max_refs,
+                            batch_delay_seconds=s.content_prefetch_batch_delay_seconds,
+                        )
                     theory = TheoryService(
                         EngineTheoryClient(
                             EngineClient.from_settings(engine_http, s),
@@ -141,6 +151,8 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         body_cache,
                         AttemptRefCache(redis_cache),
                         build_asset_url_resolver(s),
+                        prefetch_gate=prefetch_gate,
+                        prefetch_runner=prefetch_runner,
                     )
                     rate_limiter = RateLimiter(
                         fake_redis,

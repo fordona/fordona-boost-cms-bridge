@@ -98,6 +98,11 @@ class Settings(BaseSettings):
     # --- Boost batching / prefetch ------------------------------------------
     boost_batch_max_refs: int = Field(default=100, ge=1)
     content_prefetch_on_release: bool = False
+    # Pause between prefetch batch calls (Plan §9.4: "batch calls rate-limited") —
+    # protects Boost from a thundering herd of full-catalogue reads right after a
+    # publish, when every instance's next home/learning-path call notices the new
+    # release at roughly the same time.
+    content_prefetch_batch_delay_seconds: float = Field(default=0.2, ge=0)
 
     # --- Media (signed CDN URLs) --------------------------------------------
     media_cdn_base_url: AnyHttpUrl = AnyHttpUrl("https://media.fordona.io")

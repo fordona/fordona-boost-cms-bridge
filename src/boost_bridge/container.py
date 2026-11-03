@@ -19,6 +19,7 @@ from boost_bridge.core.security import JwksCache, TokenVerifier
 from boost_bridge.db.session import create_engine, ping
 from boost_bridge.services.body_cache import BodyCache
 from boost_bridge.services.media import build_asset_url_resolver
+from boost_bridge.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 from boost_bridge.services.theory_service import TheoryService
 
 ReadinessCheck = Callable[[], Awaitable[None]]
@@ -67,7 +68,24 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
     body_cache = BodyCache(boost_client, redis_cache, batch_max_refs=settings.boost_batch_max_refs)
     attempt_refs = AttemptRefCache(redis_cache)
     resolver = build_asset_url_resolver(settings)
-    theory = TheoryService(engine_client, body_cache, attempt_refs, resolver)
+    prefetch_gate: ReleasePrefetchGate | None = None
+    prefetch_runner: ReleasePrefetchRunner | None = None
+    if settings.content_prefetch_on_release:
+        prefetch_gate = ReleasePrefetchGate(redis_cache)
+        prefetch_runner = ReleasePrefetchRunner(
+            boost_client,
+            body_cache,
+            batch_max_refs=settings.boost_batch_max_refs,
+            batch_delay_seconds=settings.content_prefetch_batch_delay_seconds,
+        )
+    theory = TheoryService(
+        engine_client,
+        body_cache,
+        attempt_refs,
+        resolver,
+        prefetch_gate=prefetch_gate,
+        prefetch_runner=prefetch_runner,
+    )
     rate_limiter = RateLimiter(
         redis,
         read_limit_per_minute=settings.rate_limit_read_per_minute,
