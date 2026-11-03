@@ -819,19 +819,21 @@ every repository the plan touches:
     - [x] Boost down + cached → served;
     - [x] Boost down + not cached → 503.
 
-- [ ] **P6.T4 Block rendering and media URLs** · Repo: BFF · Dep: P6.T3, P0.T2 (O-10) · Plan §4.6, §9.5
-  - [ ] Map Boost blocks to the public block shapes in Plan §7.3: image `url`/`srcset`, video `hlsUrl`/`posterUrl`/
+- [x] **P6.T4 Block rendering and media URLs** · Repo: BFF · Dep: P6.T3, P0.T2 (O-10) · Plan §4.6, §9.5
+  - [x] Map Boost blocks to the public block shapes in Plan §7.3: image `url`/`srcset`, video `hlsUrl`/`posterUrl`/
         `captions`, audio `hlsUrl`/`transcript`, animation `url`, `rule_card`, `text`.
-  - [ ] Asset id → URL. Signed (HMAC over path + expiry, TTL from config) for units not in `MEDIA_FREE_UNIT_IDS`;
+  - [x] Asset id → URL. Signed (HMAC over path + expiry, TTL from config) for units not in `MEDIA_FREE_UNIT_IDS`;
         plain URLs otherwise. **Signed per response, never cached.** Implement behind an interface so the O-10
-        decision changes only the signer.
-  - [ ] Unknown block types are dropped and logged; an unresolvable asset drops the block, never the response.
+        decision changes only the signer. **Proceeded without O-10's sign-off** — the task's own design (an
+        interface the decision only swaps) makes it decision-agnostic; the actual CDN path layout is flagged
+        as this service's own placeholder, not a contract, pending O-10.
+  - [x] Unknown block types are dropped and logged; an unresolvable asset drops the block, never the response.
   - **Unit tests:**
-    - [ ] every block type;
-    - [ ] the signature (verifiable with the key);
-    - [ ] expiry;
-    - [ ] free-unit plain URLs;
-    - [ ] cached bodies contain no signed URL.
+    - [x] every block type;
+    - [x] the signature (verifiable with the key);
+    - [x] expiry;
+    - [x] free-unit plain URLs;
+    - [x] cached bodies contain no signed URL.
 
 - [ ] **P6.T5 Public routes** · Repo: BFF · Dep: P6.T2, P6.T4 · Plan §7.3 (endpoint table)
   - [ ] `GET /v1/home`: engine passthrough (+ icon URLs).

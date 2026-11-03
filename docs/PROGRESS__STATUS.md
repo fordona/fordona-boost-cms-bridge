@@ -2498,3 +2498,89 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P6.T4 (block rendering and media URLs) — depends on P6.T3 (now done) and P0.T2 (O-10,
   check its status before starting).
+
+### 2026-11-03 · P6.T4 · Block rendering and media URLs
+
+- **Status:** DONE
+- **Repo / branch / commit:** BFF (fordona-boost-cms-bridge) · feat/theory-app-implementations ·
+  888560f
+- **What was done:**
+  - **Proceeded without waiting on P0.T2/O-10's sign-off.** Checked: `P0.T2` is still unticked and is
+    `Repo: EXT` (a product/owner decision, not something to implement). But the tracker's own P6.T4
+    bullet already anticipates this — "implement behind an interface so the O-10 decision changes only
+    the signer" — so the task is explicitly designed to be startable before that decision lands. Logged
+    rather than silently blocking on an external dependency the task itself says not to block on.
+  - New `schemas/content_blocks.py`: the public block shapes from Plan §7.3's own example response —
+    `TextBlockOut`, `ImageBlockOut` (`url`, `srcset: list[str]`, `alt`, `width`, `height`, `caption`),
+    `AnimationBlockOut` (`format`, `url`, `alt`), `VideoBlockOut` (`hlsUrl`, `posterUrl`, `durationSec`,
+    `captions: [{locale, url}]`), `AudioBlockOut` (`hlsUrl`, `durationSec`, `transcript`),
+    `RuleCardBlockOut` (`kind`, `title`, `points`, optional `image`). `srcset` is a plain list of
+    resolved URLs, matching the plan's own example literally — not CSS srcset syntax with width
+    descriptors.
+  - New `services/blocks.py` (`render_blocks`): maps Boost's `ContentBlock` union (P6.T3) to the above.
+    **Drops and logs** (`block_type_unknown`) anything that falls through to `UnknownBlock` — a genuine
+    unrecognised type, or even a recognised type with a malformed body (P6.T3's union tries each known
+    variant before falling back). **Drops and logs** (`block_asset_unresolvable`) any image/animation/
+    video/audio block (or a rule card's optional image) whose `assetId` is empty — the only way an
+    asset can be "unresolvable" in this design, since URL construction itself is pure string formatting
+    that can't fail. One bad block never drops the rest of the list.
+  - New `services/media.py`:
+    - `UrlSigner` (a `Protocol`): `sign(path) -> str`. `PlainUrlSigner` (no signature at all — the
+      free-unit case, or local dev with no signing key). `HmacUrlSigner` (HMAC-SHA256 over
+      `path:expiry`, Plan §9.5's 2 h TTL), with a `verify(path, exp, sig)` method tests call directly
+      rather than re-deriving the HMAC by hand to check it.
+    - `AssetUrlResolver`: picks `PlainUrlSigner` vs. the signed one per `unit_id` against
+      `MEDIA_FREE_UNIT_IDS`, and builds the asset-specific path for each media kind (image at a given
+      width, an image srcset at three configured widths, HLS master playlist, poster, Lottie JSON,
+      `video_loop` MP4, a WebVTT caption file).
+    - `build_asset_url_resolver(settings)`: the composition root function wiring `AssetUrlResolver`
+      from `Settings` (P6.T1's `MEDIA_*` config) — not yet called from `container.py`, same "no
+      consumer yet" precedent as `EngineClient`/`BodyCache` (P6.T5 is the first consumer of all three).
+    - **The actual CDN path layout (`/i/{id}/{width}.webp`, `/v/{id}/master.m3u8`, …) is this
+      service's own placeholder, explicitly flagged as such in the module docstring — not a contract
+      from the plan.** The plan's own example response shows illustrative path fragments
+      (`.../a/77/960.webp`, `.../v/81/master.m3u8`, `.../l/12.json`) with inconsistent single-letter
+      prefixes that don't generalise cleanly across every media kind, and the real CDN layout is itself
+      part of the still-open O-10 decision (Boost's own layout vs. whatever Cloudflare R2 + Stream
+      would use). Over-committing to a precise, unverified path scheme here would be guessing at
+      something explicitly not yet decided; the `UrlSigner` interface is what actually matters for this
+      task, and the path format is trivially swappable alongside whichever signer ends up correct.
+  - **Fixed a wrong default from P6.T1**: `MEDIA_SIGNED_URL_TTL_SECONDS` was `3600` (1 h); Plan §9.5
+    says "TTL 2 h covers a long lesson." Corrected to `7200` in both `Settings` and `.env.example`,
+    caught while reading §9.5 for this task — P6.T1's own entry never explicitly derived this value
+    from the plan, it was carried over from `BOOST_READ_TIMEOUT`-style guessing at a "reasonable"
+    default instead.
+- **Tests:**
+  - `tests/unit/test_media.py` (11): plain signer appends nothing; HMAC signer appends `exp`/`sig`
+    with the exact configured TTL; the signature verifies with the same key and fails with a different
+    key or a different path (the forgery-resistance the tracker's "verifiable with the key" bullet
+    means); expiry reflects the configured TTL exactly; a free unit gets a plain URL, a non-free or
+    unknown unit gets a signed one; an image srcset has one URL per configured width, all signed when
+    the unit isn't free; an HLS URL points at a master playlist path.
+  - `tests/unit/test_blocks.py` (13): every block type renders correctly (text, image with
+    srcset, both animation formats routed to their own path, video with poster+captions and without a
+    poster, audio with transcript, rule card with and without an image); an unknown block type is
+    dropped; an image with an empty `assetId` is dropped; one bad block in a list doesn't drop the
+    rest; a free-unit block gets a plain URL end to end through the mapper.
+  - `tests/unit/test_body_cache.py` (+1, 14 total): a new test confirms a cached lesson body (with an
+    image block) holds the bare asset id and nothing else — no `sig=`, no `exp=`, no CDN base URL
+    string anywhere in the raw Redis payload — proving the "signed per response, never cached" rule
+    holds by construction (the two layers never share a code path that could leak a signed URL into
+    Redis), not just by inspecting the resolver's own code in isolation.
+  - Full gate: `uv run pytest -q` → 393 passed, 52 skipped (24 new in this task, +1 in
+    `test_body_cache.py`); `uv run ruff check .` / `uv run ruff format --check .` → clean;
+    `uv run mypy src scripts` → clean on 65 source files; `uv run lint-imports --config pyproject.toml`
+    → the `boost_bridge`/`boost_stub` independence contract still kept.
+- **Deviations from the plan:** the `MEDIA_SIGNED_URL_TTL_SECONDS` default correction above (a bug fix,
+  not a deviation from anything intentional); the explicit decision to proceed without O-10's sign-off,
+  per the task's own design; and the "placeholder, not contract" CDN path layout — all logged, not
+  guessed past silently.
+- **Issues found / open risks:**
+  - The CDN path layout will need revisiting once O-10 resolves and the real media host's URL
+    conventions are known — only `AssetUrlResolver`'s own method bodies change, nothing that calls it.
+  - `AssetUrlResolver`/`render_blocks` have no consumer yet (P6.T5 is the first), same as
+    `EngineClient`/`BodyCache` after their own tasks — no behavioural risk to carry forward.
+- **Ready to continue:** YES.
+- **Next task:** P6.T5 (public routes) — depends on P6.T2 and P6.T4 (both now done). This is the first
+  task that actually wires `EngineClient`, `BodyCache`, and `AssetUrlResolver`/`render_blocks` into
+  `container.py` and real `/v1/**` routes — the first task in P6 that produces a working endpoint.
