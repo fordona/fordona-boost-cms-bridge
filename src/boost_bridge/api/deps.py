@@ -12,6 +12,7 @@ from boost_bridge.core.context import learner_token_var
 from boost_bridge.core.errors import UnauthorizedError, ValidationFailedError
 from boost_bridge.core.locale import UnsupportedLocaleError, resolve_locale
 from boost_bridge.core.security import Learner
+from boost_bridge.services.theory_service import TheoryService
 
 _bearer = HTTPBearer(
     auto_error=False,
@@ -71,5 +72,20 @@ def get_locale(
         ) from None
 
 
+def get_timezone(
+    x_timezone: Annotated[str | None, Header(alias="X-Timezone", include_in_schema=False)] = None,
+) -> str | None:
+    """Forwarded to the engine as-is (Plan §7.4) — the engine, not the BFF, validates
+    it against the IANA database.
+    """
+    return x_timezone
+
+
+def get_theory_service(services: Annotated[Services, Depends(get_services)]) -> TheoryService:
+    return services.theory
+
+
 CurrentLearner = Annotated[Learner, Depends(get_current_learner)]
 Locale = Annotated[str, Depends(get_locale)]
+Timezone = Annotated[str | None, Depends(get_timezone)]
+Theory = Annotated[TheoryService, Depends(get_theory_service)]

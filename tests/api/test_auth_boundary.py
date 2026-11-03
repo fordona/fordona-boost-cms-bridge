@@ -115,9 +115,17 @@ async def test_cors_preflight_allows_configured_origin(harness: Harness) -> None
 
 
 async def test_openapi_schemas_carry_no_answer_fields(harness: Harness) -> None:
+    """``correctOptionId`` (Boost's own raw answer-key field name) must never appear
+    anywhere. ``explanation`` is legitimate on ``ResponseFeedbackOut`` as of P6.T5
+    (Plan §7.3: resolved content blocks, returned only after an answer) — but it
+    must never be the raw string field Boost's own (never-modelled-as-public)
+    ``explanation`` carries, so a string-typed ``explanation`` is still banned.
+    """
     spec = (await harness.client.get("/openapi.json")).json()
 
     for schema in spec.get("components", {}).get("schemas", {}).values():
         properties = schema.get("properties", {})
         assert "correctOptionId" not in properties
-        assert "explanation" not in properties
+        explanation = properties.get("explanation")
+        if explanation is not None:
+            assert explanation.get("type") != "string"

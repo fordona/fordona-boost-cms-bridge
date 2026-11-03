@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
 from boost_bridge import __version__
-from boost_bridge.api.routes import health
+from boost_bridge.api.routes import health, theory_attempts, theory_home, theory_lessons
 from boost_bridge.container import ServicesFactory, build_services
 from boost_bridge.core.config import Settings, get_settings
 from boost_bridge.core.context import CORRELATION_ID_HEADER
@@ -25,9 +25,10 @@ log = get_logger(__name__)
 _DESCRIPTION = """
 The Fordona Theory App's backend for frontend (BFF).
 
-Until the theory first-shipment public API ships (plan §7.3), the service exposes
-only its health probes: the earlier content catalogue routes served the question
-bank and paid theory with no entitlement check, and were retired (plan §15).
+Composes fordona-engine's decisions (lock state, question references, grading
+feedback, progress) with answer-free theory and question bodies from Boost,
+resolving media asset ids to signed CDN URLs. It never holds learner state,
+grades, chooses questions or sees an answer key (plan §7.3).
 
 * Errors are RFC 7807 `application/problem+json`, carrying `errorCode` and `correlationId`.
 """
@@ -73,6 +74,9 @@ def create_app(
 
     register_exception_handlers(app)
     app.include_router(health.router)
+    app.include_router(theory_home.router, prefix="/v1")
+    app.include_router(theory_lessons.router, prefix="/v1")
+    app.include_router(theory_attempts.router, prefix="/v1")
 
     if settings.cors_allowed_origins:
         app.add_middleware(

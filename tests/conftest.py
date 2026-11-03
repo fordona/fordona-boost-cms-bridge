@@ -19,17 +19,30 @@ from dataclasses import dataclass, field
 import httpx
 import pytest
 import respx
+from fakeredis import FakeAsyncRedis, FakeServer
 from fastapi import APIRouter, FastAPI
 
 from boost_bridge.api.deps import CurrentLearner, Locale
+from boost_bridge.cache.attempt_refs import AttemptRefCache
+from boost_bridge.cache.redis_cache import RedisCache
+from boost_bridge.clients.boost.client import BoostClient
+from boost_bridge.clients.boost.client import create_http_client as create_boost_http_client
+from boost_bridge.clients.engine.client import EngineClient
+from boost_bridge.clients.engine.client import create_http_client as create_engine_http_client
+from boost_bridge.clients.engine.theory import EngineTheoryClient
 from boost_bridge.container import Services
 from boost_bridge.core.config import Settings
 from boost_bridge.core.context import learner_token_var
 from boost_bridge.core.security import JwksCache, TokenVerifier
 from boost_bridge.main import create_app
+from boost_bridge.services.body_cache import BodyCache
+from boost_bridge.services.media import build_asset_url_resolver
+from boost_bridge.services.theory_service import TheoryService
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
 
 BOOST = "https://boost.test"
+ENGINE = "https://engine.test"
+MEDIA = "https://media.test"
 ASSETS = "https://cdn.boost.test/assets"  # fallback when an item has no assetBaseUrl
 SIGNING_KEY = SigningKey("test-key")
 PROBE_PATH = "/v1/__probe"
@@ -59,6 +72,14 @@ class Harness:
     def auth(self, **claims: object) -> dict[str, str]:
         return {"Authorization": f"Bearer {SIGNING_KEY.token(**claims)}"}
 
+    @property
+    def engine(self) -> respx.MockRouter:
+        """Same underlying respx router as ``boost`` — one mock intercepts every
+        host; this is just a self-documenting name for routes registered against
+        ``ENGINE`` rather than ``BOOST``.
+        """
+        return self.boost
+
 
 def make_settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
@@ -74,6 +95,10 @@ def make_settings(**overrides: object) -> Settings:
         "kinde_jwks_uri": JWKS_URI,
         "kinde_audience": AUDIENCE,
         "cors_allowed_origins": "https://theory.fordona.test",
+        "engine_base_url": ENGINE,
+        "engine_internal_token": "internal-secret",
+        "media_cdn_base_url": MEDIA,
+        "media_signing_key": "media-secret",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
@@ -91,7 +116,30 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
 
             @asynccontextmanager
             async def services_factory(s: Settings) -> AsyncIterator[Services]:
-                async with httpx.AsyncClient() as jwks_http:
+                async with (
+                    httpx.AsyncClient() as jwks_http,
+                    create_boost_http_client(s) as boost_http,
+                    create_engine_http_client(s) as engine_http,
+                ):
+                    redis_cache = RedisCache(
+                        FakeAsyncRedis(server=FakeServer()),
+                        hard_ttl_seconds=s.cache_hard_ttl_seconds,
+                        negative_ttl_seconds=s.cache_negative_ttl_seconds,
+                    )
+                    body_cache = BodyCache(
+                        BoostClient.from_settings(boost_http, s),
+                        redis_cache,
+                        batch_max_refs=s.boost_batch_max_refs,
+                    )
+                    theory = TheoryService(
+                        EngineTheoryClient(
+                            EngineClient.from_settings(engine_http, s),
+                            phase_complete_timeout=s.engine_phase_complete_timeout,
+                        ),
+                        body_cache,
+                        AttemptRefCache(redis_cache),
+                        build_asset_url_resolver(s),
+                    )
 
                     def check(name: str) -> Callable[[], Awaitable[None]]:
                         async def run() -> None:
@@ -108,6 +156,7 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         )
                         if s.auth_enabled
                         else None,
+                        theory=theory,
                         readiness_checks={name: check(name) for name in readiness},
                     )
 
