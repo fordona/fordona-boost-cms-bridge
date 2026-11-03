@@ -2121,3 +2121,78 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
 - **Ready to continue:** YES.
 - **Next task:** P5.T7 (completion responses carry `next` and `progress`) — depends on P5.T4 and P5.T5
   (both done). Plan §7.3.
+
+### 2026-11-03 · P5.T7 · Completion responses carry `next` and `progress`
+
+- **Status:** DONE
+- **Repo / branch / commit:** ENG · feat/theory-app-implementations · 7ef3dfcd
+- **What was done:**
+  - `AttemptPhaseCompletionDTO.next`/`.progress` (left `Object`/always-`null` since P4.T7) are now
+    typed `CompletionNextDTO`/`CompletionProgressDTO`, filled in by a new `CompletionProgressService`
+    whenever the attempt's status is `COMPLETED` — a fresh W = 0 lesson-phase completion, a fresh
+    retry-phase completion, **and** an idempotent replay of either. They're recomputed from current
+    state on every call rather than cached from whichever call first completed the attempt, since other
+    activity (another lesson finished, a timezone change) may have happened in between.
+  - `CompletionNextDTO`: a deliberately **smaller** shape than home's `continue` card — no
+    `unitId`/`openAttempt`, since this always points at a fresh, not-yet-started lesson right after
+    finishing the previous one (never a retake in progress elsewhere), plus a `status` field home's
+    `continue` doesn't carry. Built by calling `HomeContinueResolver.resolveContinue(unlocks, List.of())`
+    — passing an **empty** progress-rows list is what forces the resolver past its `CONTINUE` branch
+    straight to the forward-progress pointer, since an empty list can never contain an open attempt to
+    continue. Reusing the existing resolver this way, rather than writing a second "find the next lesson"
+    function, was a deliberate choice to avoid a second implementation of the same CURRENT/LOCKED →
+    START/UPGRADE mapping drifting from the first.
+  - `CompletionProgressDTO`: reuses `HomeStreakDTO`/`HomeReadinessDTO` exactly, but with a smaller
+    `CompletionProgressDailyChallengeDTO` (no `type`/`resetsAt`) — matching the plan's own example
+    response's smaller `dailyChallenge` shape there versus home's.
+  - **`progress`'s numbers are computed the same cheap way `HomeService` does — the cached
+    `learner_theory_summary.sum_best_accuracy`, not a fresh `ReadinessService`-style
+    `lesson_progress` scan.** Plan §7.3 says `progress` "lets the app update the streak, challenge and
+    readiness... without calling home again" — it is explicitly standing in for a home call, so it must
+    agree with what home would show, not with the more expensive, independently-scanned readiness
+    detail screen (P5.T6), which can legitimately disagree with home's cheap preview under normal
+    operation (by design, logged in P5.T6's own entry).
+  - Threads `Accept-Language` through both completion endpoints — it was never added when `X-Timezone`
+    was threaded through in P5.T3, and `next`'s title plus the ETag's locale component both need it.
+  - **Extracted three shared pure helpers**, since this task needed logic that `HomeService`/
+    `LearningPathService`/`ReadinessService` already had, identically, in three separate places:
+    - `StreakResolver` — the "streak shown as 0 after a gap" live-override rule P5.T4 discovered.
+      `HomeService` refactored to use it too, replacing its own inline copy.
+    - `ReadinessFormula.percentOf` — `round(100 × sum / total)`, used by `ReadinessService` (overall and
+      per-unit), `HomeService`'s cheap preview, and this task's `progress.readiness`.
+    - `LearningPathEtag.format` — the `"{release}.{version}.{hash}.{locale}"` string, used by
+      `LearningPathService#computeETag`, `HomeService`'s `learningPathEtag`, and this task's.
+    - `LearnerTheorySummaryModel.empty(userId, timezone)` — a static factory replacing two near-identical
+      private "default summary" methods (`HomeService` had one; this task needed the same thing).
+    This is the kind of duplication-avoidance CLAUDE.md's "three similar lines" guidance allows for:
+    these weren't three similar lines, they were the *same* formula/rule independently re-derived a
+    third time, which is exactly the drift risk worth eliminating.
+- **Tests:**
+  - `AttemptServiceTest` (+3 tests, 39/39 total): `next`/`progress` populated and correct for a
+    single-lesson-left-nothing-next completion (`next` null, `progress` still present); a second lesson
+    available → `next.action = "START"`, `next.lessonId` = the next lesson, for both
+    `completeLessonPhase` (W = 0) and `completeRetryPhase`; and the tracker's own acceptance test,
+    `completionResponse_acceptance_nextAgreesWithHomeContinueAndLearningPathCurrentEntry` — completes a
+    lesson, then independently calls `HomeService.getHome` and `LearningPathService.getLearningPath`
+    against the identical fixture, asserting the completion response's `next` agrees with home's
+    `continue` card (same lesson, same `START` action) and that the learning path's corresponding entry
+    is `CURRENT`.
+  - `CompletionProgressServiceTest` (4, real Postgres): `buildNext` returns the next lesson with
+    `START` after a completion; returns `null` when everything is completed; returns `UPGRADE` when the
+    next unit isn't entitled; `buildProgress` reflects the streak and readiness percent correctly after
+    one of two lessons is completed perfectly.
+  - `TheoryAttemptInternalControllerTest` (+1 test, 18/18 total): a `COMPLETED` retry-phase response
+    serializes `next`/`progress` correctly end to end through the controller/JSON layer, including the
+    quoted `learningPathEtag` string.
+  - Full suite: `./gradlew test --no-daemon -q`, exit code 0.
+- **Deviations from the plan:** none beyond the documented interpretations above (the smaller `next`
+  shape, the empty-progress-rows trick, and the cheap-vs-authoritative readiness choice) — all read
+  directly off the plan's own example response shapes and wording, not guessed.
+- **Issues found / open risks:** none new. Carried forward, unrelated to this task: `levelDropAllowed`
+  (P4.T6); the two P4.T8 deviations; P5.T3's `recordAttemptStarted` non-atomicity; P5.T4's
+  partial-failure ETag fallback; the `averageBestAccuracy` denominator decision (P5.T6).
+- **Ready to continue:** YES.
+- **Next task:** P5 Phase exit — "every engine internal endpoint of Plan §7.3 exists, with tests green;
+  the progress values agree between completion responses, home, the learning path and readiness." All
+  of P5.T1–T7 are now done; this is a confirmation pass (same pattern as P4 Phase exit), not new
+  implementation, before moving to P6.

@@ -764,8 +764,8 @@ every repository the plan touches:
   - **Tests:** zero progress → 0; full marks → 100; a new lesson published lowers the percent; per-unit sums are
     consistent.
 
-- [ ] **P5.T7 Completion responses carry `next` and `progress`** · Repo: ENG · Dep: P5.T4, P5.T5 · Plan §7.3
-  - [ ] Fill in the `next` (entry + `action`) and `progress` (streak, `dailyChallenge`, readiness, `learningPathEtag`)
+- [x] **P5.T7 Completion responses carry `next` and `progress`** · Repo: ENG · Dep: P5.T4, P5.T5 · Plan §7.3
+  - [x] Fill in the `next` (entry + `action`) and `progress` (streak, `dailyChallenge`, readiness, `learningPathEtag`)
         fields left in P4.T7, for both completion endpoints.
   - **Tests:** the values equal what a following `GET home` returns.
   - **Acceptance:** a full flow ends with the next lesson `current` in the learning path and `START` on home.
