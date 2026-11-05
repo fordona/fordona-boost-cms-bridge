@@ -17,7 +17,15 @@ from boost_stub import __version__
 from boost_stub.config import StubSettings, get_stub_settings
 from boost_stub.container import ServicesFactory, build_services
 from boost_stub.logging import configure_logging, get_logger
-from boost_stub.routes import changes, content, grading, templates, topics
+from boost_stub.routes import (
+    changes,
+    content,
+    grading,
+    learning_journeys,
+    mock_exams,
+    templates,
+    topics,
+)
 
 log = get_logger(__name__)
 
@@ -78,7 +86,15 @@ def create_app(
     )
     app.add_exception_handler(StarletteHTTPException, _boost_problem_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)
-    for router in (changes.router, templates.router, topics.router, content.router, grading.router):
+    for router in (
+        changes.router,
+        templates.router,
+        topics.router,
+        content.router,
+        grading.router,
+        mock_exams.router,
+        learning_journeys.router,
+    ):
         app.include_router(router, prefix="/v1")
 
     @app.middleware("http")
