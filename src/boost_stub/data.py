@@ -82,12 +82,18 @@ def synthetic_delivery_item(question: dict[str, Any], locale: str) -> dict[str, 
 
 
 def synthetic_grading_item(question: dict[str, Any]) -> dict[str, Any]:
-    """A synthetic question in the §13.4 grading shape (all locales)."""
+    """A synthetic question in the real grading shape: correctOptionId nested under ``shared``,
+    each locale's explanation nested under ``translations.{locale}`` — confirmed 2026-11-06 against
+    a live boost-api-dev.fordona.dev response (see fordona-engine's BoostGradingRevision, fixed in
+    the same pass: this stub's old flat shape matched that side's old wrong assumption, which is
+    exactly why nothing caught the mismatch until a real call did)."""
     return {
         "id": question["id"],
         "version": question["version"],
-        "correctOptionId": question["correctOptionId"],
-        "explanation": question["explanation"],
+        "shared": {"correctOptionId": question["correctOptionId"]},
+        "translations": {
+            locale: {"explanation": blocks} for locale, blocks in question["explanation"].items()
+        },
     }
 
 

@@ -116,12 +116,18 @@ def questions() -> list[dict[str, Any]]:
 
 
 def grading() -> dict[tuple[str, str], dict[str, Any]]:
+    """The real shape: correctOptionId under shared, every locale's explanation under
+    translations.{locale} in one response — confirmed 2026-11-06, see grading.py's module
+    docstring for why this replaced a flat, locale-scoped assumption."""
     return {
         (q.id, "1"): {
             "id": q.id,
             "version": "1",
-            "correctOptionId": "o2",
-            "explanation": f"<p>The correct answer for {q.id} is B.</p>",
+            "shared": {"correctOptionId": "o2"},
+            "translations": {
+                "sv-SE": {"explanation": f"<p>Rätt svar för {q.id} är B.</p>"},
+                "en-GB": {"explanation": f"<p>The correct answer for {q.id} is B.</p>"},
+            },
         }
         for q in QUESTIONS
     }

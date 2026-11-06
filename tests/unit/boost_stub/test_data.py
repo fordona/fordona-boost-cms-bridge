@@ -185,9 +185,12 @@ def test_synthetic_delivery_item_keeps_option_blocks_and_legacy_text() -> None:
 
 
 def test_synthetic_grading_item_has_the_answer_key() -> None:
+    """correctOptionId is nested under shared and explanation under translations.{locale} -
+    the real Boost shape, confirmed 2026-11-06 (see synthetic_grading_item's own docstring)."""
     record = _synthetic_record()
 
     item = synthetic_grading_item(record)
 
-    assert item["correctOptionId"] == record["correctOptionId"]
-    assert set(item["explanation"]) == {"sv-SE", "en-GB"}
+    assert item["shared"]["correctOptionId"] == record["correctOptionId"]
+    assert set(item["translations"]) == {"sv-SE", "en-GB"}
+    assert item["translations"]["sv-SE"]["explanation"] == record["explanation"]["sv-SE"]
