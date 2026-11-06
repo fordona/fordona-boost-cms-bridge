@@ -137,9 +137,16 @@ def html_to_blocks(content_html: str | None, *, source: str = "") -> list[Conten
     return _BLOCKS_ADAPTER.validate_python(_html_to_block_dicts(content_html, source=source))
 
 
-def text_block(text: str | None) -> list[ContentBlock]:
-    """A single plain-text block, for fields that are never HTML (question prompts,
-    option text) — mirrors the stub's ``question_prompt_blocks``/``option_blocks``.
+def question_prompt_blocks(
+    question_text: str | None, *, media_id: str | None
+) -> list[ContentBlock]:
+    """A legacy question's prompt: a text block plus an optional image, mirroring the
+    stub's ``question_prompt_blocks``. ``shared.mediaId`` was never wired into any BFF
+    pipeline before this fix — real sign-recognition questions ("what does this sign
+    mean?") silently lost their image.
     """
-    markdown = (text or "").strip() or "…"
-    return _BLOCKS_ADAPTER.validate_python([{"type": "text", "markdown": markdown}])
+    stripped = (question_text or "").strip()
+    dicts: list[dict[str, Any]] = [{"type": "text", "markdown": stripped or "…"}]
+    if media_id:
+        dicts.append({"type": "image", "assetId": media_id, "alt": stripped or "Question media"})
+    return _BLOCKS_ADAPTER.validate_python(dicts)

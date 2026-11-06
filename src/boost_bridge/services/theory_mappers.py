@@ -65,7 +65,7 @@ from boost_bridge.schemas.theory import (
     RetryPhaseCompletionOut,
 )
 from boost_bridge.services.blocks import render_blocks
-from boost_bridge.services.content_html import html_to_blocks, text_block
+from boost_bridge.services.content_html import html_to_blocks, question_prompt_blocks
 from boost_bridge.services.media import AssetUrlResolver
 
 _EXPLANATION_ADAPTER: TypeAdapter[list[ContentBlock]] = TypeAdapter(list[ContentBlock])
@@ -282,8 +282,11 @@ def hydrate_items(
         prompt_blocks = translation.prompt if translation is not None else []
         if not prompt_blocks and translation is not None and translation.question_text:
             # Real Boost (confirmed 2026-11-06) never sends a block-format prompt,
-            # only legacy questionText — wrap it rather than render an empty prompt.
-            prompt_blocks = text_block(translation.question_text)
+            # only legacy questionText (+ shared.mediaId for sign-recognition
+            # questions) — wrap it rather than render an empty prompt.
+            prompt_blocks = question_prompt_blocks(
+                translation.question_text, media_id=question.shared.media_id
+            )
         options_by_id = (
             {option.id: option for option in question.translation.options}
             if question.translation is not None

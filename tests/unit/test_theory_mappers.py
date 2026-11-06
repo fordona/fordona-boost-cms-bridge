@@ -83,6 +83,21 @@ def test_hydrate_items_renders_prompt_from_legacy_question_text() -> None:
     assert item.prompt[0].markdown == "Vad betyder skylten?"  # type: ignore[union-attr]
 
 
+def test_hydrate_items_appends_media_image_to_a_legacy_prompt() -> None:
+    """``shared.mediaId`` was never wired into any BFF pipeline before this fix — a
+    real sign-recognition question ("what does this sign mean?") silently lost its
+    image. ``question_payload()``'s default shape already carries one."""
+    question = _question(question_id="100")
+    ref = EngineAttemptItemRef(
+        seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
+    )
+
+    [item] = mappers.hydrate_items([ref], {"100": question}, _resolver())
+
+    assert item.prompt[1].type == "image"  # type: ignore[union-attr]
+    assert item.prompt[1].url  # type: ignore[union-attr]
+
+
 def test_hydrate_items_raises_when_question_missing_from_cache() -> None:
     ref = EngineAttemptItemRef(
         seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
