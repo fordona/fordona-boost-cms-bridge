@@ -270,9 +270,7 @@ async def test_lesson_version_mismatch_raises_content_not_found(body_cache: Body
 
 @respx.mock
 async def test_lesson_boost_down_raises_unavailable(body_cache: BodyCache) -> None:
-    respx.get(f"{BASE}/v1/delivery/lessons/10").mock(
-        side_effect=httpx.ConnectError("refused")
-    )
+    respx.get(f"{BASE}/v1/delivery/lessons/10").mock(side_effect=httpx.ConnectError("refused"))
 
     with pytest.raises(UpstreamUnavailableError):
         await body_cache.get_lesson_revision("10", "2", LOCALE)
