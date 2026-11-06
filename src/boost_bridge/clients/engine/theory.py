@@ -215,9 +215,13 @@ class EngineAnswerFeedback(EngineModel):
     selected_option_key: str
     correct_option_key: str
     correct_option_label: str
-    # Raw content blocks (asset ids only); List[Any] here, parsed into
-    # ContentBlock by the mapper, which is where the BFF's block models live.
-    explanation: list[Any] = Field(default_factory=list)
+    # The engine forwards whatever raw shape Boost sent, unnormalized (confirmed
+    # 2026-11-06: a plain HTML string for real Boost content, a block list only for
+    # the stub's synthetic data) — ``list[Any]`` here would raise ``ValidationError``
+    # on the real string case. Left untyped and parsed into ContentBlock by the
+    # mapper (``parse_explanation_blocks``), which is where the BFF's block models
+    # live and where the string-vs-list branching happens.
+    explanation: Any = None
 
 
 class EnginePhaseSummary(EngineModel):

@@ -52,6 +52,28 @@ async def test_unlocked_lesson_renders_theory_blocks_from_boost(harness: Harness
 
 
 @respx.mock
+async def test_unlocked_lesson_renders_theory_from_legacy_content_html(
+    harness: Harness,
+) -> None:
+    """Confirmed 2026-11-06 against a live boost-api-dev.fordona.dev response: real
+    Boost lessons never carry ``translation.blocks``, only legacy ``contentHtml`` —
+    ``lesson_payload()``'s default shape (no ``blocks`` override) models exactly that.
+    Before this fix, ``theory`` rendered as ``[]`` for every real lesson."""
+    harness.engine.get(f"{ENGINE}/internal/theory/v1/lessons/14").respond(
+        json=engine_envelope(lesson_state_payload())
+    )
+    harness.boost.get(f"{BOOST}/v1/delivery/lessons/14").respond(
+        json=lesson_payload(lesson_id="14")
+    )
+
+    response = await harness.client.get("/v1/lessons/14", headers=harness.auth())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["theory"] == [{"type": "text", "markdown": "Lektionstext"}]
+
+
+@respx.mock
 async def test_unknown_lesson_passes_through_engine_404(harness: Harness) -> None:
     harness.engine.get(f"{ENGINE}/internal/theory/v1/lessons/999").respond(
         404,

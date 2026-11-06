@@ -46,6 +46,7 @@ from boost_bridge.schemas.theory import (
 from boost_bridge.services import theory_mappers as mappers
 from boost_bridge.services.blocks import render_blocks
 from boost_bridge.services.body_cache import BodyCache, QuestionRef
+from boost_bridge.services.content_html import html_to_blocks
 from boost_bridge.services.media import AssetUrlResolver
 from boost_bridge.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 
@@ -106,6 +107,10 @@ class TheoryService:
 
         lesson = await self._bodies.get_lesson_revision(lesson_id, state.lesson_version, locale)
         blocks = lesson.translation.blocks if lesson.translation is not None else []
+        if not blocks and lesson.translation is not None and lesson.translation.content_html:
+            # Real Boost (confirmed 2026-11-06) never sends block-format lesson theory,
+            # only legacy contentHtml — convert it rather than render nothing.
+            blocks = html_to_blocks(lesson.translation.content_html, source=f"lesson:{lesson_id}")
         theory = render_blocks(blocks, self._resolver, unit_id=lesson.shared.module_id)
         title = (
             lesson.translation.title
