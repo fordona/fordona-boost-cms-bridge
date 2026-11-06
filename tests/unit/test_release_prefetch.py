@@ -69,7 +69,7 @@ async def test_runner_warms_every_current_lesson_and_question_across_locales() -
         lessons_route = respx.get(f"{BASE}/v1/delivery/lessons").respond(
             json=page_payload([lesson_payload(lesson_id="10")], page_size=250)
         )
-        lesson_revision_route = respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(
+        lesson_revision_route = respx.get(f"{BASE}/v1/delivery/lessons/10").respond(
             json=lesson_payload(lesson_id="10")
         )
         questions_route = respx.get(f"{BASE}/v1/delivery/questions").respond(
@@ -100,7 +100,7 @@ async def test_runner_continues_past_a_failed_lesson_revision() -> None:
         respx.get(f"{BASE}/v1/delivery/lessons").respond(
             json=page_payload([lesson_payload(lesson_id="10")], page_size=250)
         )
-        respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(500)
+        respx.get(f"{BASE}/v1/delivery/lessons/10").respond(500)
         respx.get(f"{BASE}/v1/delivery/questions").respond(json=page_payload([], page_size=250))
 
         await runner.run("42")  # must not raise

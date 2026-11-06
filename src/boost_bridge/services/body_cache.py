@@ -63,6 +63,17 @@ class BodyCache:
         self._clock = clock or SystemClock()
 
     async def get_lesson_revision(self, lesson_id: str, version: str, locale: str) -> BoostLesson:
+        """Fixed 2026-11-06, confirmed against a live boost-api-dev.fordona.dev response:
+        ``GET /v1/delivery/lessons/{id}/revisions/{version}`` genuinely 404s — Boost never
+        implemented a lesson-revision-pinning endpoint the way it did for questions (its own
+        stub's own route comment already said as much: "today's Boost has no revision history,
+        only the current lesson"). This called that non-existent endpoint directly, so every
+        real lesson fetch failed with ContentNotFoundError. Now fetches the plain, current lesson
+        and treats a returned version that doesn't match the requested one as not-found, the same
+        semantics the stub's own 404-on-mismatch behaviour already models — a lesson that changed
+        on Boost since the pinned attempt started is correctly "not this revision", not silently
+        served as if nothing changed.
+        """
         key = body_cache_key(_LESSON_ENTITY, lesson_id, version, locale)
         entry = await self._redis.get(key)
         if entry is not None:
@@ -73,16 +84,21 @@ class BodyCache:
 
         log.debug("body_cache_miss", key=key, entity=_LESSON_ENTITY)
         try:
-            payload = await self._client.fetch_raw(
-                BoostRequests.lesson_revision(lesson_id, version, locale)
-            )
+            payload = await self._client.fetch_raw(BoostRequests.lesson(lesson_id, locale))
         except BoostNotFound:
             raise ContentNotFoundError() from None
         except (BoostUnavailable, BoostTimeout, BoostMisconfigured) as exc:
             raise to_app_error(exc) from exc
 
+        lesson = BoostLesson.model_validate(payload)
+        if lesson.version != version:
+            log.warning(
+                "lesson_revision_mismatch", lesson_id=lesson_id, wanted=version, got=lesson.version
+            )
+            raise ContentNotFoundError()
+
         await self._redis.set_forever(key, payload, fetched_at=self._clock.now())
-        return BoostLesson.model_validate(payload)
+        return lesson
 
     async def get_question_revisions(
         self, refs: list[QuestionRef], locale: str

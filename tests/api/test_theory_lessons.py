@@ -40,7 +40,7 @@ async def test_unlocked_lesson_renders_theory_blocks_from_boost(harness: Harness
     )
     payload = lesson_payload(lesson_id="14")
     payload["translation"]["blocks"] = [{"type": "text", "markdown": "Welcome"}]
-    harness.boost.get(f"{BOOST}/v1/delivery/lessons/14/revisions/2").respond(json=payload)
+    harness.boost.get(f"{BOOST}/v1/delivery/lessons/14").respond(json=payload)
 
     response = await harness.client.get("/v1/lessons/14", headers=harness.auth())
 

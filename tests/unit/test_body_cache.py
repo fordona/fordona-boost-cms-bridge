@@ -198,7 +198,7 @@ async def test_lesson_cache_hit_makes_no_boost_call(
     await redis_cache.set_forever(
         key, lesson_payload(lesson_id="10", locale=LOCALE), fetched_at=clock.now()
     )
-    route = respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2")
+    route = respx.get(f"{BASE}/v1/delivery/lessons/10")
 
     lesson = await body_cache.get_lesson_revision("10", "2", LOCALE)
 
@@ -210,7 +210,7 @@ async def test_lesson_cache_hit_makes_no_boost_call(
 async def test_lesson_cache_miss_fetches_and_caches_forever(
     body_cache: BodyCache, redis: FakeAsyncRedis
 ) -> None:
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(
         json=lesson_payload(lesson_id="10", locale=LOCALE)
     )
 
@@ -234,7 +234,7 @@ async def test_cached_lesson_body_holds_asset_ids_only_never_a_signed_url(
     """
     payload = lesson_payload(lesson_id="10", locale=LOCALE)
     payload["translation"]["blocks"] = [{"type": "image", "assetId": "77", "alt": "Give-way sign"}]
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(json=payload)
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(json=payload)
 
     await body_cache.get_lesson_revision("10", "2", LOCALE)
 
@@ -249,15 +249,28 @@ async def test_cached_lesson_body_holds_asset_ids_only_never_a_signed_url(
 
 @respx.mock
 async def test_lesson_not_found_raises_content_not_found(body_cache: BodyCache) -> None:
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(404, json=problem_payload(404))
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(404, json=problem_payload(404))
 
     with pytest.raises(ContentNotFoundError):
         await body_cache.get_lesson_revision("10", "2", LOCALE)
 
 
 @respx.mock
+async def test_lesson_version_mismatch_raises_content_not_found(body_cache: BodyCache) -> None:
+    """Confirmed 2026-11-06: Boost has no lesson-revision history, only the current lesson — a
+    requested version that doesn't match what Boost currently serves is correctly "not this
+    revision", not silently served as if nothing changed."""
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(
+        json=lesson_payload(lesson_id="10", locale=LOCALE)  # version "2"
+    )
+
+    with pytest.raises(ContentNotFoundError):
+        await body_cache.get_lesson_revision("10", "999", LOCALE)
+
+
+@respx.mock
 async def test_lesson_boost_down_raises_unavailable(body_cache: BodyCache) -> None:
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").mock(
+    respx.get(f"{BASE}/v1/delivery/lessons/10").mock(
         side_effect=httpx.ConnectError("refused")
     )
 
