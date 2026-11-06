@@ -26,6 +26,9 @@ from boost_bridge.clients.engine.theory import (
     EngineLessonLastResult,
     EngineLessonOpenAttemptRef,
     EngineLessonState,
+    EngineMockExamDetail,
+    EngineMockExamQuestionRef,
+    EngineMockExamSummary,
     EnginePhaseSummary,
     EngineReadiness,
 )
@@ -55,6 +58,9 @@ from boost_bridge.schemas.theory import (
     LessonDetailOut,
     LessonLastResultOut,
     LessonPhaseCompletionOut,
+    MockExamDetailOut,
+    MockExamQuestionOut,
+    MockExamSummaryOut,
     OpenAttemptOut,
     OptionOut,
     PhaseSummaryOut,
@@ -425,4 +431,67 @@ def map_retry_phase_completion(engine: EngineAttemptPhaseCompletion) -> RetryPha
         retry_summary=_map_phase_summary(engine.retry_summary),
         next=_map_completion_next(engine.next),
         progress=_map_completion_progress(engine.progress),
+    )
+
+
+# --- Mock exams (read-only browsing, 2026-11-07 — no attempt/session tracking yet) ----------
+
+
+def map_mock_exam_summary(engine: EngineMockExamSummary) -> MockExamSummaryOut:
+    return MockExamSummaryOut(
+        mock_exam_id=engine.mock_exam_id,
+        name=engine.name,
+        description=engine.description,
+        question_count=engine.question_count,
+        complete=engine.complete,
+    )
+
+
+def hydrate_mock_exam_questions(
+    item_refs: list[EngineMockExamQuestionRef],
+    questions: dict[str, BoostQuestion],
+    resolver: AssetUrlResolver,
+) -> list[MockExamQuestionOut]:
+    """Same legacy-content fallbacks as attempt items (``hydrate_items``), minus any attempt-only
+    concept (seq, phase, answered, a shuffled option order) — this is pure preview, no attempt."""
+    out: list[MockExamQuestionOut] = []
+    for ref in item_refs:
+        question = questions.get(ref.question_id)
+        if question is None:
+            raise ContentNotFoundError(
+                f"No cached body for mock exam question {ref.question_id} version {ref.version}"
+            )
+        unit_id = question.shared.module_id
+        translation = question.translation
+        prompt_blocks = translation.prompt if translation is not None else []
+        if not prompt_blocks and translation is not None and translation.question_text:
+            prompt_blocks = question_prompt_blocks(
+                translation.question_text, media_id=question.shared.media_id
+            )
+        options = [
+            OptionOut(
+                key=option.id,
+                label=ascii_uppercase[index],
+                content=_option_content(option, resolver, unit_id=unit_id),
+            )
+            for index, option in enumerate(translation.options if translation is not None else [])
+        ]
+        out.append(
+            MockExamQuestionOut(
+                prompt=render_blocks(prompt_blocks, resolver, unit_id=unit_id), options=options
+            )
+        )
+    return out
+
+
+def map_mock_exam_detail(
+    engine: EngineMockExamDetail, questions: list[MockExamQuestionOut]
+) -> MockExamDetailOut:
+    return MockExamDetailOut(
+        mock_exam_id=engine.mock_exam_id,
+        name=engine.name,
+        description=engine.description,
+        question_count=engine.question_count,
+        complete=engine.complete,
+        questions=questions,
     )

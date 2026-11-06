@@ -38,6 +38,8 @@ from boost_bridge.schemas.theory import (
     LearningPathOut,
     LessonDetailOut,
     LessonPhaseCompletionOut,
+    MockExamDetailOut,
+    MockExamSummaryOut,
     ReadinessOut,
     ResponseFeedbackOut,
     RetryOut,
@@ -95,6 +97,23 @@ class TheoryService:
     async def readiness(self, *, locale: str) -> ReadinessOut:
         engine_readiness = await self._engine.get_readiness(accept_language=locale)
         return mappers.map_readiness(engine_readiness)
+
+    # --- Mock exams (read-only browsing, 2026-11-07) ------------------------------
+
+    async def list_mock_exams(self, *, locale: str) -> list[MockExamSummaryOut]:
+        exams = await self._engine.list_mock_exams(accept_language=locale)
+        return [mappers.map_mock_exam_summary(exam) for exam in exams]
+
+    async def mock_exam_detail(self, mock_exam_id: str, *, locale: str) -> MockExamDetailOut:
+        exam = await self._engine.get_mock_exam(mock_exam_id, accept_language=locale)
+        refs = [QuestionRef(id=item.question_id, version=item.version) for item in exam.items]
+        found, missing = await self._bodies.get_question_revisions(refs, locale)
+        if missing:
+            raise ContentNotFoundError(
+                f"Missing cached bodies for {len(missing)} question(s) in mock exam {mock_exam_id}"
+            )
+        questions = mappers.hydrate_mock_exam_questions(exam.items, found, self._resolver)
+        return mappers.map_mock_exam_detail(exam, questions)
 
     # --- Lesson theory -----------------------------------------------------------
 

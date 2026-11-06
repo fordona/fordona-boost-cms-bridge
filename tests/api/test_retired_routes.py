@@ -37,6 +37,10 @@ PUBLIC_THEORY_PATHS = frozenset(
         "/v1/attempts/{attemptId}/responses",
         "/v1/attempts/{attemptId}/phases/lesson/complete",
         "/v1/attempts/{attemptId}/phases/retry/complete",
+        # Mock exam browsing (2026-11-07) — read-only list/preview, added after Plan §7.3's
+        # original 9-endpoint scope; not in the plan's own acceptance criterion below.
+        "/v1/mock-exams",
+        "/v1/mock-exams/{mockExamId}",
     }
 )
 
@@ -56,7 +60,9 @@ def test_route_table_has_no_retired_path() -> None:
 
 
 def test_route_table_matches_the_public_surface() -> None:
-    """Plan §7.3's own acceptance criterion: exactly the 9 public endpoints + health."""
+    """Plan §7.3's own acceptance criterion was exactly 9 public endpoints + health; the 2
+    mock-exam-browsing routes (2026-11-07) are a deliberate, later addition beyond that scope —
+    this still guards against anything *else* slipping in unnoticed."""
     assert _api_paths() == PUBLIC_THEORY_PATHS | {"/health/live", "/health/ready"}
 
 
