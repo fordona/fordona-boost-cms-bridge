@@ -44,6 +44,14 @@ def test_ordered_list_is_numbered() -> None:
     assert blocks == [{"type": "text", "markdown": "1. One\n2. Two"}]
 
 
+def test_heading_becomes_its_own_markdown_heading_block() -> None:
+    """Confirmed 2026-11-06 against real Boost lesson content: before this fix,
+    ``<h2>``/``<h3>`` (and the text inside them) vanished entirely, not just their
+    styling — every section heading in a real lesson was silently dropped."""
+    blocks = html_to_blocks("<h2>What does the rule say?</h2><p>Body text.</p>")
+    assert [b["markdown"] for b in blocks] == ["## What does the rule say?", "Body text."]
+
+
 def test_unsupported_tag_and_its_content_are_dropped() -> None:
     blocks = html_to_blocks("<p>Keep this.</p><script>alert(1)</script><p>And this.</p>")
     assert [b["markdown"] for b in blocks] == ["Keep this.", "And this."]
