@@ -20,6 +20,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "fakeredis>=2.39.0",
+    "import-linter>=2.3",
     "mypy>=2.4.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
@@ -34,6 +35,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
+# Deliberately excludes src/boost_stub: the `runtime` Docker stage must never
+# carry it (plan §4.5). The `boost-stub` stage runs it from source instead
+# (see the Dockerfile) — it is a separate deployable, not a second package of
+# this project.
 packages = ["src/boost_bridge"]
 
 [tool.ruff]
@@ -49,11 +54,25 @@ ignore = ["S101"]  # assert is fine in tests; production code never uses it for 
 "tests/**" = ["S105", "S106"]  # fixture tokens are not secrets
 "migrations/**" = ["N999"]
 
+[tool.importlinter]
+root_packages = ["boost_bridge", "boost_stub"]
+
+[[tool.importlinter.contracts]]
+# The BFF and the Boost stub are separate deployables (plan §4.5): one
+# contract test suite, two implementations. Neither may depend on the other's
+# internals, or a change to one could silently break the other at runtime.
+name = "The BFF and the Boost stub never import each other"
+type = "independence"
+modules = ["boost_bridge", "boost_stub"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["integration: needs Docker (Postgres via testcontainers)"]
+markers = [
+    "integration: needs Docker (Postgres via testcontainers)",
+    "contract: Boost content API v1 contract suite (needs CONTRACT_BOOST_BASE_URL + tokens)",
+]
 
 [tool.coverage.run]
 source = ["boost_bridge"]

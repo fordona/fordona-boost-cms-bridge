@@ -5,13 +5,11 @@ lazily, so this runs without any infrastructure.
 """
 
 from boost_bridge.container import build_services
-from boost_bridge.services.content_service import ContentService
 from tests.conftest import make_settings
 
 
 async def test_build_services_with_auth() -> None:
     async with build_services(make_settings()) as services:
-        assert isinstance(services.content, ContentService)
         assert services.verifier is not None
         assert set(services.readiness_checks) == {"database", "redis"}
 

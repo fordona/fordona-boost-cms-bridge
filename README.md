@@ -1,8 +1,8 @@
 # fordona-boost-cms-bridge
 
-The Theory content API for the Fordona Theory App. It reads published **modules**, **lessons** (the app calls them "chapters") and **questions** from the Boost CMS delivery API (`boost-api.fordona.io`; [docs](https://boost.fordona.io/api-docs)) and serves them to the frontend. It handles authentication, caching, failure handling and a stable, documented contract.
+The backend for frontend (BFF) of the Fordona Theory App, being rebuilt for the theory first shipment. It will compose fordona-engine's lesson, attempt and progress decisions with answer-free content from the Boost CMS (`boost-api.fordona.io`; [docs](https://boost.fordona.io/api-docs)).
 
-The design, decisions and open risks are in **[docs/design.md](docs/design.md)**. Read it before changing behaviour.
+The plan, the task tracker and the progress log are in **[docs/](docs/)** (`fordona-theory-first-shipment-architecture.md`, `BFF_IMPLEMENTATION_PROGRESS.md`, `PROGRESS__STATUS.md`). `docs/design.md` describes the earlier Phase 1 design and is outdated. Developer conventions are in [CLAUDE.md](CLAUDE.md).
 
 **Stack:** Python 3.12 · FastAPI · httpx (async) · Redis · PostgreSQL (SQLAlchemy 2 async + Alembic) · structlog · uv
 
@@ -13,7 +13,7 @@ src/boost_bridge/
   main.py            app factory + lifespan
   container.py       composition root: builds clients, cache, DB, verifier
   api/               routers, dependencies, OpenAPI error docs
-  services/          use cases, upstream→API mappers, read-through cache, sequencer extension point
+  services/          read-through content cache (rewired by the public API in P6)
   clients/boost/     typed async Boost delivery client
   cache/             fail-open Redis wrapper, cache keys
   db/                snapshot table, repository, engine
@@ -39,29 +39,21 @@ uv run uvicorn boost_bridge.main:app --reload
 - To try it without Kinde, set `AUTH_ENABLED=false`. This is only allowed with `APP_ENV=local`; in any other environment the service refuses to start.
 - To run the whole stack in containers instead: `docker compose --profile app up --build`.
 
-### Example
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/modules?locale=en-GB"
-curl -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/lessons/10/questions"
-```
-
 ## API at a glance
 
 | Route | Purpose |
 |---|---|
-| `GET /v1/modules` · `/v1/modules/{moduleId}` · `/v1/modules/{moduleId}/lessons` | Theory modules and their lessons |
-| `GET /v1/lessons` · `/v1/lessons/{lessonId}` | Lessons (chapters) with HTML content and resources |
-| `GET /v1/lessons/{lessonId}/questions` | The lesson's full question set, ordered by the sequencer |
-| `GET /v1/questions` · `/v1/questions/{questionId}` · `/v1/questions/{questionId}/revisions/{version}` | Questions (answer-free) |
 | `GET /health/live` · `/health/ready` | Probes (no auth) |
+
+That is the whole surface until the public theory API ships (plan §7.3, tracker P6). The Phase 1
+catalogue routes (`/v1/modules*`, `/v1/lessons*`, `/v1/questions*`) were retired: they served the
+whole question bank and paid theory with no entitlement or sequencing check (plan §15, R-8, R-11).
 
 Conventions:
 
 - **Locale.** Set it with `?locale=sv-SE|en-GB` or the `Accept-Language` header. The default is `sv-SE`. The locale that was served comes back in `Content-Language`.
 - **Errors** use RFC 7807 `application/problem+json`, with `errorCode` and `correlationId`.
-- **`X-Content-Stale: true`** means Boost was unavailable and the response came from the last-known-good copy.
-- **Correlation.** Send `X-Correlation-ID` to trace a request through to Boost. One is generated if you don't send it.
+- **Correlation.** Send `X-Correlation-ID` to trace a request. One is generated if you don't send it.
 
 ## Verifying against live Boost
 
@@ -70,7 +62,6 @@ The delivery models still need checking against a real payload (design doc §12,
 ```bash
 export TOKEN=...   # Boost-audience Kinde access token; never commit or paste it anywhere shared
 curl -s -H "Authorization: Bearer $TOKEN" "https://boost-api.fordona.io/v1/delivery/lessons?locale=sv-SE&pageSize=1"
-curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8000/v1/lessons?pageSize=1"
 ```
 
 Compare the first response against `src/boost_bridge/clients/boost/models.py`. Check especially the form of `assetBaseUrl` and whether `availableLocales` and `updatedAt` are present.

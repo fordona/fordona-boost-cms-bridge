@@ -1,0 +1,50 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_VERSION: "0.9.18"  # same pin as the Dockerfile
+
+jobs:
+  checks:
+    name: lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "uv==${UV_VERSION}"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src scripts
+      - run: uv run lint-imports --config pyproject.toml
+      # Integration tests run too: the runner has Docker for testcontainers,
+      # which also covers the Docker-stage isolation check (P2.T3).
+      - run: uv run pytest -m "not contract"
+
+  contract-boost:
+    # The Boost content API v1 contract suite (plan §13.6) against a deployed
+    # server. Every test skips while CONTRACT_BOOST_BASE_URL is not configured.
+    name: Boost content contract (deployed server)
+    runs-on: ubuntu-latest
+    env:
+      CONTRACT_BOOST_BASE_URL: ${{ secrets.CONTRACT_BOOST_BASE_URL }}
+      CONTRACT_DELIVERY_TOKEN: ${{ secrets.CONTRACT_DELIVERY_TOKEN }}
+      CONTRACT_GRADING_TOKEN: ${{ secrets.CONTRACT_GRADING_TOKEN }}
+      CONTRACT_EXPIRED_CURSOR: ${{ secrets.CONTRACT_EXPIRED_CURSOR }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "uv==${UV_VERSION}"
+      - run: uv sync --frozen
+      - run: uv run pytest -m contract tests/contract -rs

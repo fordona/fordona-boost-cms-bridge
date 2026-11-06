@@ -34,21 +34,15 @@ from boost_bridge.clients.boost.errors import (
     BoostNotFound,
     BoostTimeout,
     BoostUnavailable,
+    to_app_error,
 )
 from boost_bridge.clients.boost.models import BoostModel
 from boost_bridge.core.clock import Clock, SystemClock
-from boost_bridge.core.errors import (
-    ContentNotFoundError,
-    UpstreamMisconfiguredError,
-    UpstreamTimeoutError,
-    UpstreamUnavailableError,
-)
+from boost_bridge.core.errors import ContentNotFoundError
 from boost_bridge.core.logging import get_logger
 from boost_bridge.db.snapshot_repository import Snapshot
 
 log = get_logger(__name__)
-
-_CLIENT_RETRY_AFTER_SECONDS = "5"
 
 
 class RawFetcher(Protocol):
@@ -175,7 +169,7 @@ class ContentCache:
                     snapshot_fetched_at=snapshot.fetched_at.isoformat(),
                 )
                 return _Loaded(snapshot.payload, Source.SNAPSHOT)
-            raise _to_app_error(exc) from exc
+            raise to_app_error(exc) from exc
 
         fetched_at = self._clock.now()
         await self._redis.set(key, payload, fetched_at=fetched_at)
@@ -230,14 +224,3 @@ class ContentCache:
         except Exception as exc:
             # Losing a snapshot write only weakens the fallback; the request succeeds.
             log.warning("snapshot_write_failed", key=key, error=repr(exc))
-
-
-def _to_app_error(
-    exc: BoostUnavailable | BoostTimeout | BoostMisconfigured,
-) -> UpstreamUnavailableError | UpstreamTimeoutError | UpstreamMisconfiguredError:
-    if isinstance(exc, BoostMisconfigured):
-        return UpstreamMisconfiguredError()
-    retry = {"Retry-After": _CLIENT_RETRY_AFTER_SECONDS}
-    if isinstance(exc, BoostTimeout):
-        return UpstreamTimeoutError(headers=retry)
-    return UpstreamUnavailableError(headers=retry)

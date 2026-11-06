@@ -12,8 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.routing import APIRoute
 
 from boost_bridge import __version__
-from boost_bridge.api.router import api_router
-from boost_bridge.api.routes import health
+from boost_bridge.api.routes import health, theory_attempts, theory_home, theory_lessons
 from boost_bridge.container import ServicesFactory, build_services
 from boost_bridge.core.config import Settings, get_settings
 from boost_bridge.core.context import CORRELATION_ID_HEADER
@@ -24,15 +23,14 @@ from boost_bridge.core.middleware import RequestContextMiddleware
 log = get_logger(__name__)
 
 _DESCRIPTION = """
-Published Theory content (modules, lessons a.k.a. chapters, and questions) from the
-Boost CMS, for the Fordona Theory App.
+The Fordona Theory App's backend for frontend (BFF).
 
-* Every `/v1` route requires a Kinde bearer token.
-* Locale is chosen by `?locale=` or `Accept-Language` (`sv-SE` default, `en-GB`).
-* Questions are **answer-free**.
+Composes fordona-engine's decisions (lock state, question references, grading
+feedback, progress) with answer-free theory and question bodies from Boost,
+resolving media asset ids to signed CDN URLs. It never holds learner state,
+grades, chooses questions or sees an answer key (plan §7.3).
+
 * Errors are RFC 7807 `application/problem+json`, carrying `errorCode` and `correlationId`.
-* `X-Content-Stale: true` marks content served from the last-known-good copy
-  while Boost is unavailable.
 """
 
 
@@ -75,8 +73,10 @@ def create_app(
     app.state.settings = settings
 
     register_exception_handlers(app)
-    app.include_router(api_router)
     app.include_router(health.router)
+    app.include_router(theory_home.router, prefix="/v1")
+    app.include_router(theory_lessons.router, prefix="/v1")
+    app.include_router(theory_attempts.router, prefix="/v1")
 
     if settings.cors_allowed_origins:
         app.add_middleware(

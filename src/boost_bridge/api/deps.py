@@ -1,18 +1,18 @@
 """FastAPI dependency providers."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 import structlog
-from fastapi import Depends, Header, Query, Request, Response
+from fastapi import Depends, Header, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from boost_bridge.container import Services
 from boost_bridge.core.config import SUPPORTED_LOCALES, Settings
 from boost_bridge.core.context import learner_token_var
-from boost_bridge.core.errors import UnauthorizedError, ValidationFailedError
+from boost_bridge.core.errors import RateLimitedError, UnauthorizedError, ValidationFailedError
 from boost_bridge.core.locale import UnsupportedLocaleError, resolve_locale
 from boost_bridge.core.security import Learner
-from boost_bridge.services.content_service import ContentService, Served
+from boost_bridge.services.theory_service import TheoryService
 
 _bearer = HTTPBearer(
     auto_error=False,
@@ -31,10 +31,6 @@ def get_settings(request: Request) -> Settings:
 def get_services(request: Request) -> Services:
     services: Services = request.app.state.services
     return services
-
-
-def get_content_service(services: Annotated[Services, Depends(get_services)]) -> ContentService:
-    return services.content
 
 
 async def get_current_learner(
@@ -76,19 +72,44 @@ def get_locale(
         ) from None
 
 
-def serve[T](response: Response, served: Served[T], locale: str) -> T:
-    """Attach response headers that describe how the content was served."""
-    response.headers["Content-Language"] = locale
-    response.headers["Vary"] = "Accept-Language, Authorization"
-    if served.stale:
-        response.headers["X-Content-Stale"] = "true"
-    return served.value
+def get_timezone(
+    x_timezone: Annotated[str | None, Header(alias="X-Timezone", include_in_schema=False)] = None,
+) -> str | None:
+    """Forwarded to the engine as-is (Plan §7.4) — the engine, not the BFF, validates
+    it against the IANA database.
+    """
+    return x_timezone
+
+
+def get_theory_service(services: Annotated[Services, Depends(get_services)]) -> TheoryService:
+    return services.theory
+
+
+async def _enforce_rate_limit(
+    kind: Literal["read", "write"], learner: Learner, services: Services
+) -> None:
+    result = await services.rate_limiter.check(learner.sub, kind)
+    if not result.allowed:
+        raise RateLimitedError(result.retry_after_seconds)
+
+
+async def enforce_read_rate_limit(
+    learner: Annotated[Learner, Depends(get_current_learner)],
+    services: Annotated[Services, Depends(get_services)],
+) -> None:
+    await _enforce_rate_limit("read", learner, services)
+
+
+async def enforce_write_rate_limit(
+    learner: Annotated[Learner, Depends(get_current_learner)],
+    services: Annotated[Services, Depends(get_services)],
+) -> None:
+    await _enforce_rate_limit("write", learner, services)
 
 
 CurrentLearner = Annotated[Learner, Depends(get_current_learner)]
 Locale = Annotated[str, Depends(get_locale)]
-Content = Annotated[ContentService, Depends(get_content_service)]
-PageNumber = Annotated[int, Query(ge=1, le=10_000, description="1-based page number.")]
-PageSize = Annotated[
-    int, Query(alias="pageSize", ge=1, le=100, description="Items per page (max 100).")
-]
+Timezone = Annotated[str | None, Depends(get_timezone)]
+Theory = Annotated[TheoryService, Depends(get_theory_service)]
+ReadRateLimit = Annotated[None, Depends(enforce_read_rate_limit)]
+WriteRateLimit = Annotated[None, Depends(enforce_write_rate_limit)]

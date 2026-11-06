@@ -30,6 +30,18 @@ class ErrorCode:
     NOT_FOUND = "NOT_FOUND"
     METHOD_NOT_ALLOWED = "METHOD_NOT_ALLOWED"
     HTTP_ERROR = "HTTP_ERROR"
+    # Matches fordona-engine's own ErrorCode.Theory constants exactly (see that
+    # class's javadoc for why these aren't the plan's literal THEORY_MODULE_LOCKED —
+    # ErrorCode.Learn already owns that string for the unrelated Directus-backed
+    # theory feature). Every other theory error code (ATTEMPT_NOT_FOUND, OPTION_INVALID,
+    # the conflict codes...) reaches the client via EnginePassthroughError unchanged,
+    # since the engine throws them itself; these two are the one case the BFF
+    # synthesizes on its own (GET /v1/lessons/{lessonId}: the engine's lesson-state
+    # read never throws on locked, it reports it, so turning that into a 403 is this
+    # service's job — Plan §7.3, "the BFF fetches no theory for a locked lesson").
+    THEORY_LESSON_LOCKED = "THEORY_LESSON_LOCKED"
+    THEORY_MODULE_LOCKED = "THEORY_ATTEMPT_MODULE_LOCKED"
+    RATE_LIMITED = "RATE_LIMITED"
 
 
 class AppError(Exception):
@@ -98,6 +110,30 @@ class UpstreamTimeoutError(AppError):
     error_code = ErrorCode.UPSTREAM_TIMEOUT
     type_path = "upstream/timeout"
     default_detail = "The content service timed out. Please try again shortly."
+
+
+class TheoryLessonLockedError(AppError):
+    status_code = 403
+    error_code = ErrorCode.THEORY_LESSON_LOCKED
+    type_path = "theory/lesson-locked"
+    default_detail = "This lesson unlocks once the previous lesson is completed."
+
+
+class TheoryModuleLockedError(AppError):
+    status_code = 403
+    error_code = ErrorCode.THEORY_MODULE_LOCKED
+    type_path = "theory/module-locked"
+    default_detail = "This unit requires an active subscription."
+
+
+class RateLimitedError(AppError):
+    status_code = 429
+    error_code = ErrorCode.RATE_LIMITED
+    type_path = "rate-limit/exceeded"
+    default_detail = "Too many requests. Please slow down."
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(headers={"Retry-After": str(retry_after_seconds)})
 
 
 def _title(error_code: str) -> str:
