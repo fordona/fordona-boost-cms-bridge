@@ -12,6 +12,7 @@ from boost_bridge.core.context import learner_token_var
 from boost_bridge.core.errors import RateLimitedError, UnauthorizedError, ValidationFailedError
 from boost_bridge.core.locale import UnsupportedLocaleError, resolve_locale
 from boost_bridge.core.security import Learner
+from boost_bridge.learning_journey.service import LearningJourneyService
 from boost_bridge.services.theory_service import TheoryService
 
 _bearer = HTTPBearer(
@@ -85,6 +86,12 @@ def get_theory_service(services: Annotated[Services, Depends(get_services)]) -> 
     return services.theory
 
 
+def get_learning_journey_service(
+    services: Annotated[Services, Depends(get_services)],
+) -> LearningJourneyService:
+    return services.learning_journey
+
+
 async def _enforce_rate_limit(
     kind: Literal["read", "write"], learner: Learner, services: Services
 ) -> None:
@@ -111,5 +118,6 @@ CurrentLearner = Annotated[Learner, Depends(get_current_learner)]
 Locale = Annotated[str, Depends(get_locale)]
 Timezone = Annotated[str | None, Depends(get_timezone)]
 Theory = Annotated[TheoryService, Depends(get_theory_service)]
+LearningJourney = Annotated[LearningJourneyService, Depends(get_learning_journey_service)]
 ReadRateLimit = Annotated[None, Depends(enforce_read_rate_limit)]
 WriteRateLimit = Annotated[None, Depends(enforce_write_rate_limit)]

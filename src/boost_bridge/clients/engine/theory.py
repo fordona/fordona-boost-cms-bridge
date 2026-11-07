@@ -209,15 +209,44 @@ class EngineAttempt(EngineModel):
     items: list[EngineAttemptItemRef] = Field(default_factory=list)
 
 
+# --- Mock exams (read-only browsing, 2026-11-07 — no attempt/session tracking yet) ----------------
+
+
+class EngineMockExamSummary(EngineModel):
+    mock_exam_id: str
+    name: str
+    description: str
+    question_count: int
+    complete: bool
+
+
+class EngineMockExamQuestionRef(EngineModel):
+    question_id: str
+    version: str
+
+
+class EngineMockExamDetail(EngineModel):
+    mock_exam_id: str
+    name: str
+    description: str
+    question_count: int
+    complete: bool
+    items: list[EngineMockExamQuestionRef] = Field(default_factory=list)
+
+
 class EngineAnswerFeedback(EngineModel):
     seq: int
     is_correct: bool
     selected_option_key: str
     correct_option_key: str
     correct_option_label: str
-    # Raw content blocks (asset ids only); List[Any] here, parsed into
-    # ContentBlock by the mapper, which is where the BFF's block models live.
-    explanation: list[Any] = Field(default_factory=list)
+    # The engine forwards whatever raw shape Boost sent, unnormalized (confirmed
+    # 2026-11-06: a plain HTML string for real Boost content, a block list only for
+    # the stub's synthetic data) — ``list[Any]`` here would raise ``ValidationError``
+    # on the real string case. Left untyped and parsed into ContentBlock by the
+    # mapper (``parse_explanation_blocks``), which is where the BFF's block models
+    # live and where the string-vs-list branching happens.
+    explanation: Any = None
 
 
 class EnginePhaseSummary(EngineModel):
@@ -298,6 +327,20 @@ class EngineTheoryClient:
     async def get_lesson_state(self, lesson_id: str) -> EngineLessonState:
         response = await self._client.get(f"/internal/theory/v1/lessons/{lesson_id}")
         return EngineLessonState.model_validate(response.data)
+
+    async def list_mock_exams(self, *, accept_language: str) -> list[EngineMockExamSummary]:
+        response = await self._client.get(
+            "/internal/theory/v1/mock-exams", accept_language=accept_language
+        )
+        return [EngineMockExamSummary.model_validate(item) for item in response.data]
+
+    async def get_mock_exam(
+        self, mock_exam_id: str, *, accept_language: str
+    ) -> EngineMockExamDetail:
+        response = await self._client.get(
+            f"/internal/theory/v1/mock-exams/{mock_exam_id}", accept_language=accept_language
+        )
+        return EngineMockExamDetail.model_validate(response.data)
 
     async def start_attempt(self, lesson_id: str, request_id: str) -> EngineAttempt:
         response = await self._client.post(

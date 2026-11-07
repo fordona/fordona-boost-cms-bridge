@@ -51,6 +51,13 @@ LESSON_DETAIL_ERRORS: dict[int | str, dict[str, Any]] = {
     **_UPSTREAM_ERRORS,
 }
 
+MOCK_EXAM_DETAIL_ERRORS: dict[int | str, dict[str, Any]] = {
+    **_AUTH_ERROR,
+    404: _problem("THEORY_MOCK_EXAM_NOT_FOUND."),
+    **_RATE_LIMIT_ERROR,
+    **_UPSTREAM_ERRORS,
+}
+
 ATTEMPT_START_ERRORS: dict[int | str, dict[str, Any]] = {
     **_AUTH_ERROR,
     403: _problem("THEORY_LESSON_LOCKED or THEORY_ATTEMPT_MODULE_LOCKED."),

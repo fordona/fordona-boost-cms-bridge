@@ -98,6 +98,20 @@ async def test_flat_entity_shape_is_accepted(client: BoostClient) -> None:
 
 
 @respx.mock
+async def test_null_resources_parses_as_empty_list(client: BoostClient) -> None:
+    """Confirmed 2026-11-07 against a live boost-api-dev response: Boost's single-item
+    revision endpoint sends ``resources: null`` for the same entity its list endpoints
+    send ``resources: []`` for — every single-ref fetch raised ValidationError on this."""
+    payload = question_payload()
+    payload["resources"] = None
+    respx.get(f"{BASE}/v1/delivery/questions/100/revisions/5").respond(json=payload)
+
+    question = await client.fetch(BoostRequests.question_revision("100", "5", "sv-SE"))
+
+    assert question.resources == []
+
+
+@respx.mock
 async def test_forwards_correlation_id(client: BoostClient) -> None:
     route = respx.get(f"{BASE}/v1/delivery/modules/1").respond(json=module_payload())
     token = correlation_id_var.set("cid-42")

@@ -27,7 +27,6 @@ from boost_bridge.clients.boost.errors import (
     BoostUnavailable,
 )
 from boost_bridge.clients.boost.models import (
-    BoostBatchResponse,
     BoostLesson,
     BoostModel,
     BoostModule,
@@ -45,10 +44,6 @@ _RETRYABLE_STATUS = frozenset({429, 502, 503, 504})
 _BACKOFF_BASE_SECONDS = 0.1
 _BACKOFF_CAP_SECONDS = 2.0
 _RETRY_AFTER_CAP_SECONDS = 2.0
-# Plan §13.2: "More than 100 refs returns 422." A client-side guard so a caller
-# that forgets to chunk fails fast with a clear message instead of a 422 from
-# Boost; ``BodyCache`` (services/body_cache.py) is what actually chunks.
-MAX_BATCH_REFS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,30 +176,6 @@ class BoostRequests:
             path=f"/v1/delivery/questions/{question_id}/revisions/{version}",
             locale=locale,
             model=BoostQuestion,
-        )
-
-    @staticmethod
-    def question_revisions_batch(
-        refs: list[tuple[str, str]], locale: str
-    ) -> BoostRequest[BoostBatchResponse[BoostQuestion]]:
-        """§13.2 endpoint 5 (new): up to 100 question revisions in one call.
-
-        ``refs`` is ``[(questionId, version), ...]``. More than
-        ``MAX_BATCH_REFS`` raises here rather than letting Boost's own 422
-        surface confusingly later — ``BodyCache`` is what actually chunks a
-        larger set into calls this size or smaller.
-        """
-        if len(refs) > MAX_BATCH_REFS:
-            raise ValueError(
-                f"question_revisions_batch accepts at most {MAX_BATCH_REFS} refs, got {len(refs)}"
-            )
-        ref_param = ",".join(f"{question_id}:{version}" for question_id, version in refs)
-        return BoostRequest(
-            resource="question_revisions_batch",
-            path="/v1/delivery/questions/revisions",
-            locale=locale,
-            model=BoostBatchResponse[BoostQuestion],
-            params=(("refs", ref_param),),
         )
 
 

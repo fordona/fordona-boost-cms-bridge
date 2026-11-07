@@ -17,6 +17,7 @@ question count is always far below that limit, so in practice this never
 needs more than one call per attempt, exactly as the plan expects).
 """
 
+import asyncio
 from dataclasses import dataclass
 
 from pydantic import ValidationError
@@ -63,6 +64,17 @@ class BodyCache:
         self._clock = clock or SystemClock()
 
     async def get_lesson_revision(self, lesson_id: str, version: str, locale: str) -> BoostLesson:
+        """Fixed 2026-11-06, confirmed against a live boost-api-dev.fordona.dev response:
+        ``GET /v1/delivery/lessons/{id}/revisions/{version}`` genuinely 404s — Boost never
+        implemented a lesson-revision-pinning endpoint the way it did for questions (its own
+        stub's own route comment already said as much: "today's Boost has no revision history,
+        only the current lesson"). This called that non-existent endpoint directly, so every
+        real lesson fetch failed with ContentNotFoundError. Now fetches the plain, current lesson
+        and treats a returned version that doesn't match the requested one as not-found, the same
+        semantics the stub's own 404-on-mismatch behaviour already models — a lesson that changed
+        on Boost since the pinned attempt started is correctly "not this revision", not silently
+        served as if nothing changed.
+        """
         key = body_cache_key(_LESSON_ENTITY, lesson_id, version, locale)
         entry = await self._redis.get(key)
         if entry is not None:
@@ -73,16 +85,21 @@ class BodyCache:
 
         log.debug("body_cache_miss", key=key, entity=_LESSON_ENTITY)
         try:
-            payload = await self._client.fetch_raw(
-                BoostRequests.lesson_revision(lesson_id, version, locale)
-            )
+            payload = await self._client.fetch_raw(BoostRequests.lesson(lesson_id, locale))
         except BoostNotFound:
             raise ContentNotFoundError() from None
         except (BoostUnavailable, BoostTimeout, BoostMisconfigured) as exc:
             raise to_app_error(exc) from exc
 
+        lesson = BoostLesson.model_validate(payload)
+        if lesson.version != version:
+            log.warning(
+                "lesson_revision_mismatch", lesson_id=lesson_id, wanted=version, got=lesson.version
+            )
+            raise ContentNotFoundError()
+
         await self._redis.set_forever(key, payload, fetched_at=self._clock.now())
-        return BoostLesson.model_validate(payload)
+        return lesson
 
     async def get_question_revisions(
         self, refs: list[QuestionRef], locale: str
@@ -141,14 +158,43 @@ class BodyCache:
     async def _fetch_question_batch(
         self, refs: list[QuestionRef], locale: str
     ) -> tuple[list[BoostQuestion], list[str]]:
-        request = BoostRequests.question_revisions_batch(
-            [(ref.id, ref.version) for ref in refs], locale
-        )
+        """Fixed 2026-11-07, confirmed against the real boost-api-dev OpenAPI spec: Boost never
+        implemented the batch endpoint this used to call (``GET /v1/delivery/questions/revisions``
+        isn't in its spec at all — only the single-item
+        ``GET /v1/delivery/questions/{id}/revisions/{version}`` is). Every attempt start therefore
+        404'd on this call with an uncaught ``BoostNotFound`` (this method only handled
+        BoostUnavailable/BoostTimeout/BoostMisconfigured), surfacing as a raw 500 instead of the
+        per-question "missing" this cache is meant to degrade to. Fetches each ref individually
+        instead, concurrently, with the same fallback semantics ``get_lesson_revision`` already
+        uses: a 404 or a version mismatch is "missing", not a crash.
+        """
+        results = await asyncio.gather(*(self._fetch_one_question(ref, locale) for ref in refs))
+        items = [question for question in results if question is not None]
+        missing = [
+            f"{ref.id}:{ref.version}"
+            for ref, question in zip(refs, results, strict=True)
+            if question is None
+        ]
+        return items, missing
+
+    async def _fetch_one_question(self, ref: QuestionRef, locale: str) -> BoostQuestion | None:
         try:
-            batch = await self._client.fetch(request)
+            question = await self._client.fetch(
+                BoostRequests.question_revision(ref.id, ref.version, locale)
+            )
+        except BoostNotFound:
+            return None
         except (BoostUnavailable, BoostTimeout, BoostMisconfigured) as exc:
             raise to_app_error(exc) from exc
-        return batch.items, batch.missing
+        if question.version != ref.version:
+            log.warning(
+                "question_revision_mismatch",
+                question_id=ref.id,
+                wanted=ref.version,
+                got=question.version,
+            )
+            return None
+        return question
 
 
 def _chunked[T](items: list[T], size: int) -> list[list[T]]:

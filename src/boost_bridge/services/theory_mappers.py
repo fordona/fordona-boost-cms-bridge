@@ -26,6 +26,9 @@ from boost_bridge.clients.engine.theory import (
     EngineLessonLastResult,
     EngineLessonOpenAttemptRef,
     EngineLessonState,
+    EngineMockExamDetail,
+    EngineMockExamQuestionRef,
+    EngineMockExamSummary,
     EnginePhaseSummary,
     EngineReadiness,
 )
@@ -55,6 +58,9 @@ from boost_bridge.schemas.theory import (
     LessonDetailOut,
     LessonLastResultOut,
     LessonPhaseCompletionOut,
+    MockExamDetailOut,
+    MockExamQuestionOut,
+    MockExamSummaryOut,
     OpenAttemptOut,
     OptionOut,
     PhaseSummaryOut,
@@ -65,15 +71,29 @@ from boost_bridge.schemas.theory import (
     RetryPhaseCompletionOut,
 )
 from boost_bridge.services.blocks import render_blocks
+from boost_bridge.services.content_html import html_to_blocks, question_prompt_blocks
 from boost_bridge.services.media import AssetUrlResolver
 
 _EXPLANATION_ADAPTER: TypeAdapter[list[ContentBlock]] = TypeAdapter(list[ContentBlock])
 
 
-def parse_explanation_blocks(raw: list[Any]) -> list[ContentBlock]:
-    """The engine's ``explanation`` is untyped JSON (its own ``Object`` field) in the
-    same block shape as everything Boost serves — never refetched, just parsed.
+def parse_explanation_blocks(raw: Any) -> list[ContentBlock]:
+    """The engine's ``explanation`` is untyped JSON (its own ``Object`` field) — it
+    forwards whatever shape Boost sent it verbatim (``AttemptService`` stores and
+    relays the raw value as-is, never normalizing it).
+
+    Confirmed 2026-11-06: real Boost sends a plain HTML **string** per locale, never
+    a block list — the stub's synthetic data is block-list-shaped, which is why this
+    went unnoticed until tested against real content. A plain string must be
+    HTML-converted here rather than handed to the block ``TypeAdapter`` directly,
+    which raises ``ValidationError`` on a ``str`` (Pydantic v2 does not coerce
+    ``str`` into ``list[Any]``) — every "Check Answer" response would otherwise 500
+    against real Boost content.
     """
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        return html_to_blocks(raw, source="explanation")
     return _EXPLANATION_ADAPTER.validate_python(raw)
 
 
@@ -264,7 +284,15 @@ def hydrate_items(
                 f"No cached body for question {ref.question_id} version {ref.version}"
             )
         unit_id = question.shared.module_id
-        prompt_blocks = question.translation.prompt if question.translation is not None else []
+        translation = question.translation
+        prompt_blocks = translation.prompt if translation is not None else []
+        if not prompt_blocks and translation is not None and translation.question_text:
+            # Real Boost (confirmed 2026-11-06) never sends a block-format prompt,
+            # only legacy questionText (+ shared.mediaId for sign-recognition
+            # questions) — wrap it rather than render an empty prompt.
+            prompt_blocks = question_prompt_blocks(
+                translation.question_text, media_id=question.shared.media_id
+            )
         options_by_id = (
             {option.id: option for option in question.translation.options}
             if question.translation is not None
@@ -403,4 +431,67 @@ def map_retry_phase_completion(engine: EngineAttemptPhaseCompletion) -> RetryPha
         retry_summary=_map_phase_summary(engine.retry_summary),
         next=_map_completion_next(engine.next),
         progress=_map_completion_progress(engine.progress),
+    )
+
+
+# --- Mock exams (read-only browsing, 2026-11-07 — no attempt/session tracking yet) ----------
+
+
+def map_mock_exam_summary(engine: EngineMockExamSummary) -> MockExamSummaryOut:
+    return MockExamSummaryOut(
+        mock_exam_id=engine.mock_exam_id,
+        name=engine.name,
+        description=engine.description,
+        question_count=engine.question_count,
+        complete=engine.complete,
+    )
+
+
+def hydrate_mock_exam_questions(
+    item_refs: list[EngineMockExamQuestionRef],
+    questions: dict[str, BoostQuestion],
+    resolver: AssetUrlResolver,
+) -> list[MockExamQuestionOut]:
+    """Same legacy-content fallbacks as attempt items (``hydrate_items``), minus any attempt-only
+    concept (seq, phase, answered, a shuffled option order) — this is pure preview, no attempt."""
+    out: list[MockExamQuestionOut] = []
+    for ref in item_refs:
+        question = questions.get(ref.question_id)
+        if question is None:
+            raise ContentNotFoundError(
+                f"No cached body for mock exam question {ref.question_id} version {ref.version}"
+            )
+        unit_id = question.shared.module_id
+        translation = question.translation
+        prompt_blocks = translation.prompt if translation is not None else []
+        if not prompt_blocks and translation is not None and translation.question_text:
+            prompt_blocks = question_prompt_blocks(
+                translation.question_text, media_id=question.shared.media_id
+            )
+        options = [
+            OptionOut(
+                key=option.id,
+                label=ascii_uppercase[index],
+                content=_option_content(option, resolver, unit_id=unit_id),
+            )
+            for index, option in enumerate(translation.options if translation is not None else [])
+        ]
+        out.append(
+            MockExamQuestionOut(
+                prompt=render_blocks(prompt_blocks, resolver, unit_id=unit_id), options=options
+            )
+        )
+    return out
+
+
+def map_mock_exam_detail(
+    engine: EngineMockExamDetail, questions: list[MockExamQuestionOut]
+) -> MockExamDetailOut:
+    return MockExamDetailOut(
+        mock_exam_id=engine.mock_exam_id,
+        name=engine.name,
+        description=engine.description,
+        question_count=engine.question_count,
+        complete=engine.complete,
+        questions=questions,
     )

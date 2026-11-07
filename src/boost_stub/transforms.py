@@ -15,13 +15,20 @@ from boost_stub.logging import get_logger
 
 log = get_logger(__name__)
 
-# The "supported HTML subset" (plan §4.5): block-level containers, inline
+# The "supported HTML subset" (plan §4.5): block-level containers, headings, inline
 # emphasis, lists and links. Everything else — script, style, table, iframe,
 # raw attributes — is dropped, including its content, and logged.
+#
+# Headings were missing here entirely until 2026-11-06, which didn't just lose their
+# styling — ``handle_starttag`` drops an unsupported tag's content outright, so every
+# section heading in real Boost lesson content vanished with no trace. Found via
+# ``boost_bridge.services.content_html`` (this module's BFF-side port, which carries
+# the same fix) and ported back here to keep the two in sync.
 _BLOCK_TAGS = frozenset({"p", "div", "br"})
 _LIST_TAGS = frozenset({"ul", "ol"})
+_HEADING_TAGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 _INLINE_MARKUP = {"strong": "**", "b": "**", "em": "*", "i": "*"}
-_SUPPORTED_TAGS = _BLOCK_TAGS | _LIST_TAGS | {"li", "a", *_INLINE_MARKUP}
+_SUPPORTED_TAGS = _BLOCK_TAGS | _LIST_TAGS | _HEADING_TAGS | {"li", "a", *_INLINE_MARKUP}
 
 
 class _BlockHtmlParser(HTMLParser):
@@ -58,6 +65,9 @@ class _BlockHtmlParser(HTMLParser):
             return
         if tag in _BLOCK_TAGS:
             self._flush()
+        elif tag in _HEADING_TAGS:
+            self._flush()
+            self._current = "#" * int(tag[1]) + " "
         elif tag in _LIST_TAGS:
             self._flush()
             self._list_depth += 1
@@ -82,7 +92,7 @@ class _BlockHtmlParser(HTMLParser):
             return
         if tag not in _SUPPORTED_TAGS:
             return
-        if tag in _BLOCK_TAGS:
+        if tag in _BLOCK_TAGS or tag in _HEADING_TAGS:
             self._flush()
         elif tag in _LIST_TAGS:
             self._flush()

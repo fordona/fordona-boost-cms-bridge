@@ -69,6 +69,35 @@ def test_hydrate_items_orders_options_with_display_labels() -> None:
     assert item.answered is False
 
 
+def test_hydrate_items_renders_prompt_from_legacy_question_text() -> None:
+    """Confirmed 2026-11-06: real Boost never sends ``translation.prompt``, only the
+    legacy ``questionText`` — ``question_payload()`` already models that (no ``prompt``
+    key), so this is the exact shape every real question arrives in."""
+    question = _question(question_id="100")
+    ref = EngineAttemptItemRef(
+        seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
+    )
+
+    [item] = mappers.hydrate_items([ref], {"100": question}, _resolver())
+
+    assert item.prompt[0].markdown == "Vad betyder skylten?"  # type: ignore[union-attr]
+
+
+def test_hydrate_items_appends_media_image_to_a_legacy_prompt() -> None:
+    """``shared.mediaId`` was never wired into any BFF pipeline before this fix — a
+    real sign-recognition question ("what does this sign mean?") silently lost its
+    image. ``question_payload()``'s default shape already carries one."""
+    question = _question(question_id="100")
+    ref = EngineAttemptItemRef(
+        seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
+    )
+
+    [item] = mappers.hydrate_items([ref], {"100": question}, _resolver())
+
+    assert item.prompt[1].type == "image"  # type: ignore[union-attr]
+    assert item.prompt[1].url  # type: ignore[union-attr]
+
+
 def test_hydrate_items_raises_when_question_missing_from_cache() -> None:
     ref = EngineAttemptItemRef(
         seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
@@ -141,3 +170,21 @@ def test_parse_explanation_blocks_tolerates_unknown_type() -> None:
     blocks = mappers.parse_explanation_blocks(raw)
 
     assert len(blocks) == 2
+
+
+def test_parse_explanation_blocks_converts_a_real_boost_html_string() -> None:
+    """Confirmed 2026-11-06 against live boost-api-dev.fordona.dev: the engine forwards
+    a plain HTML string for real Boost content (``EngineAnswerFeedback.explanation`` is
+    untyped precisely because of this). Before this fix, passing a ``str`` straight to
+    the ``list[ContentBlock]`` TypeAdapter raised ``ValidationError`` — every real
+    "Check Answer" response would 500."""
+    raw = "<p>At a junction without signs, yield to traffic from the right.</p>"
+
+    blocks = mappers.parse_explanation_blocks(raw)
+
+    assert len(blocks) == 1
+    assert blocks[0].markdown == "At a junction without signs, yield to traffic from the right."  # type: ignore[union-attr]
+
+
+def test_parse_explanation_blocks_treats_none_as_empty() -> None:
+    assert mappers.parse_explanation_blocks(None) == []

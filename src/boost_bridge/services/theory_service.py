@@ -38,6 +38,8 @@ from boost_bridge.schemas.theory import (
     LearningPathOut,
     LessonDetailOut,
     LessonPhaseCompletionOut,
+    MockExamDetailOut,
+    MockExamSummaryOut,
     ReadinessOut,
     ResponseFeedbackOut,
     RetryOut,
@@ -46,6 +48,7 @@ from boost_bridge.schemas.theory import (
 from boost_bridge.services import theory_mappers as mappers
 from boost_bridge.services.blocks import render_blocks
 from boost_bridge.services.body_cache import BodyCache, QuestionRef
+from boost_bridge.services.content_html import html_to_blocks
 from boost_bridge.services.media import AssetUrlResolver
 from boost_bridge.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 
@@ -95,6 +98,23 @@ class TheoryService:
         engine_readiness = await self._engine.get_readiness(accept_language=locale)
         return mappers.map_readiness(engine_readiness)
 
+    # --- Mock exams (read-only browsing, 2026-11-07) ------------------------------
+
+    async def list_mock_exams(self, *, locale: str) -> list[MockExamSummaryOut]:
+        exams = await self._engine.list_mock_exams(accept_language=locale)
+        return [mappers.map_mock_exam_summary(exam) for exam in exams]
+
+    async def mock_exam_detail(self, mock_exam_id: str, *, locale: str) -> MockExamDetailOut:
+        exam = await self._engine.get_mock_exam(mock_exam_id, accept_language=locale)
+        refs = [QuestionRef(id=item.question_id, version=item.version) for item in exam.items]
+        found, missing = await self._bodies.get_question_revisions(refs, locale)
+        if missing:
+            raise ContentNotFoundError(
+                f"Missing cached bodies for {len(missing)} question(s) in mock exam {mock_exam_id}"
+            )
+        questions = mappers.hydrate_mock_exam_questions(exam.items, found, self._resolver)
+        return mappers.map_mock_exam_detail(exam, questions)
+
     # --- Lesson theory -----------------------------------------------------------
 
     async def lesson_detail(self, lesson_id: str, *, locale: str) -> LessonDetailOut:
@@ -106,6 +126,10 @@ class TheoryService:
 
         lesson = await self._bodies.get_lesson_revision(lesson_id, state.lesson_version, locale)
         blocks = lesson.translation.blocks if lesson.translation is not None else []
+        if not blocks and lesson.translation is not None and lesson.translation.content_html:
+            # Real Boost (confirmed 2026-11-06) never sends block-format lesson theory,
+            # only legacy contentHtml — convert it rather than render nothing.
+            blocks = html_to_blocks(lesson.translation.content_html, source=f"lesson:{lesson_id}")
         theory = render_blocks(blocks, self._resolver, unit_id=lesson.shared.module_id)
         title = (
             lesson.translation.title

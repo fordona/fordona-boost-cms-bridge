@@ -64,7 +64,7 @@ async def test_cache_hit_makes_no_boost_call(
 ) -> None:
     ref = QuestionRef(id="100", version="5")
     await _seed_question(redis_cache, clock, ref)
-    route = respx.get(f"{BASE}/v1/delivery/questions/revisions")
+    route = respx.get(f"{BASE}/v1/delivery/questions/100/revisions/5")
 
     found, missing = await body_cache.get_question_revisions([ref], LOCALE)
 
@@ -74,14 +74,14 @@ async def test_cache_hit_makes_no_boost_call(
 
 
 @respx.mock
-async def test_mixed_hit_and_miss_fetches_only_missing_in_one_batch_call(
+async def test_mixed_hit_and_miss_fetches_only_the_missing_one(
     body_cache: BodyCache, redis_cache: RedisCache, clock: FakeClock
 ) -> None:
     cached = QuestionRef(id="100", version="5")
-    uncached = QuestionRef(id="200", version="3")
+    uncached = QuestionRef(id="200", version="5")
     await _seed_question(redis_cache, clock, cached)
-    route = respx.get(f"{BASE}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="200", locale=LOCALE)], "missing": []}
+    route = respx.get(f"{BASE}/v1/delivery/questions/200/revisions/5").respond(
+        json=question_payload(question_id="200", locale=LOCALE)
     )
 
     found, missing = await body_cache.get_question_revisions([cached, uncached], LOCALE)
@@ -89,32 +89,44 @@ async def test_mixed_hit_and_miss_fetches_only_missing_in_one_batch_call(
     assert set(found) == {"100", "200"}
     assert missing == []
     assert route.call_count == 1
-    assert route.calls.last.request.url.params["refs"] == "200:3"
 
 
 @respx.mock
 async def test_mixed_hit_and_miss_caches_the_fetched_item_forever(
     body_cache: BodyCache, redis_cache: RedisCache, redis: FakeAsyncRedis, clock: FakeClock
 ) -> None:
-    uncached = QuestionRef(id="200", version="3")
-    respx.get(f"{BASE}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="200", locale=LOCALE)], "missing": []}
+    uncached = QuestionRef(id="200", version="5")
+    respx.get(f"{BASE}/v1/delivery/questions/200/revisions/5").respond(
+        json=question_payload(question_id="200", locale=LOCALE)
     )
 
     await body_cache.get_question_revisions([uncached], LOCALE)
 
-    # Cached under the version Boost actually returned (factories.py's question_payload
-    # always answers "5"), not the version that was requested.
     key = body_cache_key("QUESTION", "200", "5", LOCALE)
     assert await redis.get(key) is not None
     assert await redis.ttl(key) == -1  # no TTL at all — immutable
 
 
 @respx.mock
-async def test_boost_missing_ref_is_dropped_and_logged(body_cache: BodyCache) -> None:
+async def test_boost_404_ref_is_dropped_and_logged(body_cache: BodyCache) -> None:
     ref = QuestionRef(id="999", version="1")
-    respx.get(f"{BASE}/v1/delivery/questions/revisions").respond(
-        json={"items": [], "missing": ["999:1"]}
+    respx.get(f"{BASE}/v1/delivery/questions/999/revisions/1").respond(
+        404, json=problem_payload(404)
+    )
+
+    found, missing = await body_cache.get_question_revisions([ref], LOCALE)
+
+    assert found == {}
+    assert missing == [ref]
+
+
+@respx.mock
+async def test_boost_version_mismatch_is_dropped_and_logged(body_cache: BodyCache) -> None:
+    """Same semantics as a lesson revision mismatch: Boost answering with a different
+    version than requested means this exact revision isn't available, not a crash."""
+    ref = QuestionRef(id="100", version="999")
+    respx.get(f"{BASE}/v1/delivery/questions/100/revisions/999").respond(
+        json=question_payload(question_id="100", locale=LOCALE)  # version "5"
     )
 
     found, missing = await body_cache.get_question_revisions([ref], LOCALE)
@@ -129,7 +141,7 @@ async def test_boost_down_but_fully_cached_is_served(
 ) -> None:
     ref = QuestionRef(id="100", version="5")
     await _seed_question(redis_cache, clock, ref)
-    route = respx.get(f"{BASE}/v1/delivery/questions/revisions").mock(
+    route = respx.get(f"{BASE}/v1/delivery/questions/100/revisions/5").mock(
         side_effect=httpx.ConnectError("refused")
     )
 
@@ -143,7 +155,7 @@ async def test_boost_down_but_fully_cached_is_served(
 @respx.mock
 async def test_boost_down_and_not_cached_is_unavailable(body_cache: BodyCache) -> None:
     ref = QuestionRef(id="100", version="5")
-    respx.get(f"{BASE}/v1/delivery/questions/revisions").mock(
+    respx.get(f"{BASE}/v1/delivery/questions/100/revisions/5").mock(
         side_effect=httpx.ConnectError("refused")
     )
 
@@ -152,33 +164,31 @@ async def test_boost_down_and_not_cached_is_unavailable(body_cache: BodyCache) -
 
 
 @respx.mock
-async def test_boost_rejecting_batch_and_not_cached_is_unavailable(body_cache: BodyCache) -> None:
+async def test_boost_rejecting_a_fetch_and_not_cached_is_unavailable(body_cache: BodyCache) -> None:
     ref = QuestionRef(id="100", version="5")
-    respx.get(f"{BASE}/v1/delivery/questions/revisions").respond(503, json=problem_payload(503))
+    respx.get(f"{BASE}/v1/delivery/questions/100/revisions/5").respond(
+        503, json=problem_payload(503)
+    )
 
     with pytest.raises(UpstreamUnavailableError):
         await body_cache.get_question_revisions([ref], LOCALE)
 
 
 @respx.mock
-async def test_more_refs_than_batch_max_are_split_into_multiple_calls(
+async def test_every_missing_ref_is_fetched_concurrently(
     boost_client: BoostClient, redis_cache: RedisCache, clock: FakeClock
 ) -> None:
     body_cache = BodyCache(boost_client, redis_cache, batch_max_refs=2, clock=clock)
-    refs = [QuestionRef(id=str(i), version="1") for i in range(5)]
-    route = respx.get(f"{BASE}/v1/delivery/questions/revisions").respond(
-        json={
-            "items": [question_payload(question_id=str(i), locale=LOCALE) for i in range(5)],
-            "missing": [],
-        }
-    )
-    # Each chunk only asks for its own slice, so a single fixed response above
-    # doesn't model per-chunk refs precisely, but the call *count* still proves
-    # chunking happened — the refs param format is checked in the earlier test.
+    refs = [QuestionRef(id=str(i), version="5") for i in range(5)]
+    for i in range(5):
+        respx.get(f"{BASE}/v1/delivery/questions/{i}/revisions/5").respond(
+            json=question_payload(question_id=str(i), locale=LOCALE)
+        )
 
-    await body_cache.get_question_revisions(refs, LOCALE)
+    found, missing = await body_cache.get_question_revisions(refs, LOCALE)
 
-    assert route.call_count == 3  # ceil(5 / 2)
+    assert set(found) == {str(i) for i in range(5)}
+    assert missing == []
 
 
 async def test_empty_refs_makes_no_call(body_cache: BodyCache) -> None:
@@ -198,7 +208,7 @@ async def test_lesson_cache_hit_makes_no_boost_call(
     await redis_cache.set_forever(
         key, lesson_payload(lesson_id="10", locale=LOCALE), fetched_at=clock.now()
     )
-    route = respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2")
+    route = respx.get(f"{BASE}/v1/delivery/lessons/10")
 
     lesson = await body_cache.get_lesson_revision("10", "2", LOCALE)
 
@@ -210,7 +220,7 @@ async def test_lesson_cache_hit_makes_no_boost_call(
 async def test_lesson_cache_miss_fetches_and_caches_forever(
     body_cache: BodyCache, redis: FakeAsyncRedis
 ) -> None:
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(
         json=lesson_payload(lesson_id="10", locale=LOCALE)
     )
 
@@ -234,7 +244,7 @@ async def test_cached_lesson_body_holds_asset_ids_only_never_a_signed_url(
     """
     payload = lesson_payload(lesson_id="10", locale=LOCALE)
     payload["translation"]["blocks"] = [{"type": "image", "assetId": "77", "alt": "Give-way sign"}]
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(json=payload)
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(json=payload)
 
     await body_cache.get_lesson_revision("10", "2", LOCALE)
 
@@ -249,17 +259,28 @@ async def test_cached_lesson_body_holds_asset_ids_only_never_a_signed_url(
 
 @respx.mock
 async def test_lesson_not_found_raises_content_not_found(body_cache: BodyCache) -> None:
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").respond(404, json=problem_payload(404))
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(404, json=problem_payload(404))
 
     with pytest.raises(ContentNotFoundError):
         await body_cache.get_lesson_revision("10", "2", LOCALE)
 
 
 @respx.mock
-async def test_lesson_boost_down_raises_unavailable(body_cache: BodyCache) -> None:
-    respx.get(f"{BASE}/v1/delivery/lessons/10/revisions/2").mock(
-        side_effect=httpx.ConnectError("refused")
+async def test_lesson_version_mismatch_raises_content_not_found(body_cache: BodyCache) -> None:
+    """Confirmed 2026-11-06: Boost has no lesson-revision history, only the current lesson — a
+    requested version that doesn't match what Boost currently serves is correctly "not this
+    revision", not silently served as if nothing changed."""
+    respx.get(f"{BASE}/v1/delivery/lessons/10").respond(
+        json=lesson_payload(lesson_id="10", locale=LOCALE)  # version "2"
     )
+
+    with pytest.raises(ContentNotFoundError):
+        await body_cache.get_lesson_revision("10", "999", LOCALE)
+
+
+@respx.mock
+async def test_lesson_boost_down_raises_unavailable(body_cache: BodyCache) -> None:
+    respx.get(f"{BASE}/v1/delivery/lessons/10").mock(side_effect=httpx.ConnectError("refused"))
 
     with pytest.raises(UpstreamUnavailableError):
         await body_cache.get_lesson_revision("10", "2", LOCALE)

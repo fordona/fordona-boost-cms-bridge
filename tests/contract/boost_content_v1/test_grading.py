@@ -43,8 +43,9 @@ def test_correct_option_is_one_of_the_delivered_options(
 
     for item in _grading(client, discovery.question_refs)["items"]:
         ref = (str(item["id"]), str(item["version"]))
-        assert item.get("correctOptionId") in options_by_ref[ref], (
-            f"question {ref}: correctOptionId {item.get('correctOptionId')!r} "
+        correct_option_id = item.get("shared", {}).get("correctOptionId")
+        assert correct_option_id in options_by_ref[ref], (
+            f"question {ref}: correctOptionId {correct_option_id!r} "
             f"is not among {sorted(options_by_ref[ref])}"
         )
 
@@ -56,7 +57,7 @@ def test_explanations_are_valid_blocks_in_every_locale(
         problem
         for item in _grading(client, discovery.question_refs)["items"]
         for problem in validate_locale_blocks(
-            item.get("explanation"),
+            {locale: t.get("explanation") for locale, t in item.get("translations", {}).items()},
             client.config.locales,
             Context.EXPLANATION,
             path=f"question {item.get('id')} explanation",

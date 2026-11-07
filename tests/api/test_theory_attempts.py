@@ -47,8 +47,8 @@ async def test_start_attempt_hydrates_items_with_labelled_options_and_no_leaks(
             )
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="100")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
     )
 
     response = await harness.client.post(
@@ -84,11 +84,11 @@ async def test_get_attempt_splits_lesson_and_retry_items_by_phase(harness: Harne
             )
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={
-            "items": [question_payload(question_id="100"), question_payload(question_id="200")],
-            "missing": [],
-        }
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
+    )
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/200/revisions/5").respond(
+        json=question_payload(question_id="200")
     )
 
     response = await harness.client.get(f"/v1/attempts/{ATTEMPT_ID}", headers=harness.auth())
@@ -111,8 +111,8 @@ async def test_answer_resolves_correct_option_content_from_cached_body(harness: 
             attempt_payload(items=[attempt_item_ref_payload(seq=1, question_id="100")])
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="100")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
     )
     await harness.client.post(
         "/v1/lessons/12/attempts",
@@ -145,12 +145,66 @@ async def test_answer_resolves_correct_option_content_from_cached_body(harness: 
 
 
 @respx.mock
+async def test_answer_renders_explanation_from_a_real_boost_html_string(
+    harness: Harness,
+) -> None:
+    """Confirmed 2026-11-06: the engine forwards whatever raw shape Boost sent for
+    ``explanation`` verbatim, and real Boost sends a plain HTML string, never a block
+    list (the stub's synthetic data is block-list-shaped, which is why this went
+    unnoticed until tested against real content). Before this fix, this response
+    would 500 — ``EngineAnswerFeedback.explanation: list[Any]`` raised
+    ``ValidationError`` on a ``str``."""
+    harness.engine.post(f"{ENGINE}/internal/theory/v1/lessons/12/attempts").respond(
+        json=engine_envelope(
+            attempt_payload(items=[attempt_item_ref_payload(seq=1, question_id="100")])
+        )
+    )
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
+    )
+    await harness.client.post(
+        "/v1/lessons/12/attempts",
+        json={"requestId": "33333333-3333-3333-3333-333333333333"},
+        headers=harness.auth(),
+    )
+
+    harness.engine.post(f"{ENGINE}/internal/theory/v1/attempts/{ATTEMPT_ID}/responses").respond(
+        json=engine_envelope(
+            answer_feedback_payload(
+                explanation="<p>At a junction without signs, yield to traffic from the right.</p>"
+            )
+        )
+    )
+
+    response = await harness.client.post(
+        f"/v1/attempts/{ATTEMPT_ID}/responses",
+        json={
+            "responseId": "44444444-4444-4444-4444-444444444444",
+            "seq": 1,
+            "selectedOptionKey": "a",
+            "durationMs": 1200,
+        },
+        headers=harness.auth(),
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["explanation"] == [
+        {
+            "type": "text",
+            "markdown": "At a junction without signs, yield to traffic from the right.",
+        }
+    ]
+    _assert_no_leaked_keys(body)
+
+
+@respx.mock
 async def test_complete_lesson_phase_hydrates_retry_items(harness: Harness) -> None:
     harness.engine.post(
         f"{ENGINE}/internal/theory/v1/attempts/{ATTEMPT_ID}/phases/lesson/complete"
     ).respond(json=engine_envelope(phase_completion_payload()))
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="200")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/200/revisions/5").respond(
+        json=question_payload(question_id="200")
     )
 
     response = await harness.client.post(

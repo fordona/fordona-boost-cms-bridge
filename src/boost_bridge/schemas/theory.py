@@ -214,6 +214,31 @@ class RetryOut(APIModel):
     items: list[ItemOut] = Field(default_factory=list)
 
 
+# --- Mock exams (read-only browsing, 2026-11-07 — no attempt/session tracking yet) ----------------
+
+
+class MockExamSummaryOut(APIModel):
+    mock_exam_id: str
+    name: str
+    description: str
+    question_count: int
+    complete: bool
+
+
+class MockExamQuestionOut(APIModel):
+    prompt: list[ContentBlockOut] = Field(default_factory=list)
+    options: list[OptionOut] = Field(default_factory=list)
+
+
+class MockExamDetailOut(APIModel):
+    mock_exam_id: str
+    name: str
+    description: str
+    question_count: int
+    complete: bool
+    questions: list[MockExamQuestionOut] = Field(default_factory=list)
+
+
 class AttemptOut(APIModel):
     attempt_id: str
     # Known on start (the lessonId path param); null on GET /v1/attempts/{attemptId}
