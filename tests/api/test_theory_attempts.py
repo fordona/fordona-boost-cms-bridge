@@ -47,8 +47,8 @@ async def test_start_attempt_hydrates_items_with_labelled_options_and_no_leaks(
             )
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="100")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
     )
 
     response = await harness.client.post(
@@ -84,11 +84,11 @@ async def test_get_attempt_splits_lesson_and_retry_items_by_phase(harness: Harne
             )
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={
-            "items": [question_payload(question_id="100"), question_payload(question_id="200")],
-            "missing": [],
-        }
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
+    )
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/200/revisions/5").respond(
+        json=question_payload(question_id="200")
     )
 
     response = await harness.client.get(f"/v1/attempts/{ATTEMPT_ID}", headers=harness.auth())
@@ -111,8 +111,8 @@ async def test_answer_resolves_correct_option_content_from_cached_body(harness: 
             attempt_payload(items=[attempt_item_ref_payload(seq=1, question_id="100")])
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="100")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
     )
     await harness.client.post(
         "/v1/lessons/12/attempts",
@@ -159,8 +159,8 @@ async def test_answer_renders_explanation_from_a_real_boost_html_string(
             attempt_payload(items=[attempt_item_ref_payload(seq=1, question_id="100")])
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="100")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
     )
     await harness.client.post(
         "/v1/lessons/12/attempts",
@@ -203,8 +203,8 @@ async def test_complete_lesson_phase_hydrates_retry_items(harness: Harness) -> N
     harness.engine.post(
         f"{ENGINE}/internal/theory/v1/attempts/{ATTEMPT_ID}/phases/lesson/complete"
     ).respond(json=engine_envelope(phase_completion_payload()))
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="200")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/200/revisions/5").respond(
+        json=question_payload(question_id="200")
     )
 
     response = await harness.client.post(

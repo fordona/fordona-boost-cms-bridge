@@ -27,7 +27,7 @@ modelled**. Code that does not exist cannot leak them.
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 
@@ -146,6 +146,19 @@ class BoostEntity(BoostModel):
             return {**data, "shared": data, "translation": data}
         return data
 
+    @field_validator("resources", mode="before")
+    @classmethod
+    def _null_resources_is_empty(cls, value: Any) -> Any:
+        """2026-11-07, confirmed against a live boost-api-dev response: Boost's list
+        endpoints (``GET /v1/delivery/questions``) send ``resources: []``, but its
+        single-item endpoint (``GET /v1/delivery/questions/{id}/revisions/{version}``)
+        sends ``resources: null`` for the exact same entity — an inconsistency between
+        Boost's own endpoints, not a missing field. Every single-ref fetch failed
+        pydantic validation on this (``list_type``, "Input should be a valid list"),
+        surfacing as an unhandled ``BoostUnavailable``/503 for every attempt start.
+        """
+        return [] if value is None else value
+
 
 # --- Modules ---------------------------------------------------------------
 
@@ -237,19 +250,6 @@ class BoostPage[ItemT: BoostModel](BoostModel):
     page: int = Field(ge=1)
     page_size: int = Field(ge=1)
     as_of: datetime | None = None
-
-
-class BoostBatchResponse[ItemT: BoostModel](BoostModel):
-    """A revisions-batch response (§13.2, endpoints 5/6): ``{items, missing}``.
-
-    Unlike ``BoostPage``, a batch call never fails for a ref that doesn't exist
-    or isn't published — it lands in ``missing`` (``"{id}:{version}"`` strings)
-    instead, so one bad ref in an attempt's question set never fails the whole
-    batch.
-    """
-
-    items: list[ItemT]
-    missing: list[str] = Field(default_factory=list)
 
 
 class BoostProblem(BoostModel):

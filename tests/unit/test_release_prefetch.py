@@ -75,8 +75,8 @@ async def test_runner_warms_every_current_lesson_and_question_across_locales() -
         questions_route = respx.get(f"{BASE}/v1/delivery/questions").respond(
             json=page_payload([question_payload(question_id="100")], page_size=250)
         )
-        revisions_route = respx.get(f"{BASE}/v1/delivery/questions/revisions").respond(
-            json={"items": [question_payload(question_id="100")], "missing": []}
+        revisions_route = respx.get(f"{BASE}/v1/delivery/questions/100/revisions/5").respond(
+            json=question_payload(question_id="100")
         )
 
         await runner.run("42")

@@ -17,6 +17,7 @@ question count is always far below that limit, so in practice this never
 needs more than one call per attempt, exactly as the plan expects).
 """
 
+import asyncio
 from dataclasses import dataclass
 
 from pydantic import ValidationError
@@ -157,14 +158,43 @@ class BodyCache:
     async def _fetch_question_batch(
         self, refs: list[QuestionRef], locale: str
     ) -> tuple[list[BoostQuestion], list[str]]:
-        request = BoostRequests.question_revisions_batch(
-            [(ref.id, ref.version) for ref in refs], locale
-        )
+        """Fixed 2026-11-07, confirmed against the real boost-api-dev OpenAPI spec: Boost never
+        implemented the batch endpoint this used to call (``GET /v1/delivery/questions/revisions``
+        isn't in its spec at all — only the single-item
+        ``GET /v1/delivery/questions/{id}/revisions/{version}`` is). Every attempt start therefore
+        404'd on this call with an uncaught ``BoostNotFound`` (this method only handled
+        BoostUnavailable/BoostTimeout/BoostMisconfigured), surfacing as a raw 500 instead of the
+        per-question "missing" this cache is meant to degrade to. Fetches each ref individually
+        instead, concurrently, with the same fallback semantics ``get_lesson_revision`` already
+        uses: a 404 or a version mismatch is "missing", not a crash.
+        """
+        results = await asyncio.gather(*(self._fetch_one_question(ref, locale) for ref in refs))
+        items = [question for question in results if question is not None]
+        missing = [
+            f"{ref.id}:{ref.version}"
+            for ref, question in zip(refs, results, strict=True)
+            if question is None
+        ]
+        return items, missing
+
+    async def _fetch_one_question(self, ref: QuestionRef, locale: str) -> BoostQuestion | None:
         try:
-            batch = await self._client.fetch(request)
+            question = await self._client.fetch(
+                BoostRequests.question_revision(ref.id, ref.version, locale)
+            )
+        except BoostNotFound:
+            return None
         except (BoostUnavailable, BoostTimeout, BoostMisconfigured) as exc:
             raise to_app_error(exc) from exc
-        return batch.items, batch.missing
+        if question.version != ref.version:
+            log.warning(
+                "question_revision_mismatch",
+                question_id=ref.id,
+                wanted=ref.version,
+                got=question.version,
+            )
+            return None
+        return question
 
 
 def _chunked[T](items: list[T], size: int) -> list[list[T]]:

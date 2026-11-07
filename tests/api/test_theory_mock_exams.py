@@ -45,8 +45,8 @@ async def test_get_mock_exam_hydrates_each_question_from_boost(harness: Harness)
             }
         )
     )
-    harness.boost.get(f"{BOOST}/v1/delivery/questions/revisions").respond(
-        json={"items": [question_payload(question_id="100")], "missing": []}
+    harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
+        json=question_payload(question_id="100")
     )
 
     response = await harness.client.get("/v1/mock-exams/1", headers=harness.auth())
