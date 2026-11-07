@@ -35,6 +35,9 @@ from boost_bridge.container import Services
 from boost_bridge.core.config import Settings
 from boost_bridge.core.context import learner_token_var
 from boost_bridge.core.security import JwksCache, TokenVerifier
+from boost_bridge.db.session import create_engine, create_sessionmaker
+from boost_bridge.learning_journey.repository import LearningJourneyRepository
+from boost_bridge.learning_journey.service import LearningJourneyService
 from boost_bridge.main import create_app
 from boost_bridge.services.body_cache import BodyCache
 from boost_bridge.services.media import build_asset_url_resolver
@@ -143,9 +146,10 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                             batch_max_refs=s.boost_batch_max_refs,
                             batch_delay_seconds=s.content_prefetch_batch_delay_seconds,
                         )
+                    raw_engine_client = EngineClient.from_settings(engine_http, s)
                     theory = TheoryService(
                         EngineTheoryClient(
-                            EngineClient.from_settings(engine_http, s),
+                            raw_engine_client,
                             phase_complete_timeout=s.engine_phase_complete_timeout,
                         ),
                         body_cache,
@@ -158,6 +162,14 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         fake_redis,
                         read_limit_per_minute=s.rate_limit_read_per_minute,
                         write_limit_per_minute=s.rate_limit_write_per_minute,
+                    )
+                    # Real (lazy — never actually connects unless a test calls it)
+                    # learning_journey wiring, matching container.py. Tests that
+                    # exercise it replace ``harness.app.state.services.learning_journey``
+                    # with ``FakeLearningJourneyRepository``-backed service instead.
+                    db_engine = create_engine(s)
+                    learning_journey = LearningJourneyService(
+                        LearningJourneyRepository(create_sessionmaker(db_engine)), raw_engine_client
                     )
 
                     def check(name: str) -> Callable[[], Awaitable[None]]:
@@ -176,6 +188,7 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                         if s.auth_enabled
                         else None,
                         theory=theory,
+                        learning_journey=learning_journey,
                         rate_limiter=rate_limiter,
                         readiness_checks={name: check(name) for name in readiness},
                     )

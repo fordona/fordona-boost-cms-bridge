@@ -25,6 +25,8 @@ from boost_bridge.core.context import CORRELATION_ID_HEADER
 from boost_bridge.core.errors import register_exception_handlers
 from boost_bridge.core.logging import configure_logging, get_logger
 from boost_bridge.core.middleware import RequestContextMiddleware
+from boost_bridge.learning_journey.errors import register_learning_journey_exception_handler
+from boost_bridge.learning_journey.routes import router as learning_journey_router
 
 log = get_logger(__name__)
 
@@ -79,11 +81,13 @@ def create_app(
     app.state.settings = settings
 
     register_exception_handlers(app)
+    register_learning_journey_exception_handler(app)
     app.include_router(health.router)
     app.include_router(theory_home.router, prefix="/v1")
     app.include_router(theory_lessons.router, prefix="/v1")
     app.include_router(theory_attempts.router, prefix="/v1")
     app.include_router(theory_mock_exams.router, prefix="/v1")
+    app.include_router(learning_journey_router, prefix="/v1")
 
     if settings.cors_allowed_origins:
         app.add_middleware(

@@ -15,6 +15,10 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.1.4",
     "structlog>=26.1.0",
     "uvicorn[standard]>=0.54.0",
+    # python:3.12-slim (this project's own Docker base) has no system IANA tz
+    # database, and neither does Windows — zoneinfo.ZoneInfo("UTC") itself fails
+    # without this. Pure-Python data, works identically everywhere.
+    "tzdata>=2026.1",
 ]
 
 [dependency-groups]

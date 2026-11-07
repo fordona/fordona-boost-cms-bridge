@@ -41,6 +41,22 @@ PUBLIC_THEORY_PATHS = frozenset(
         # original 9-endpoint scope; not in the plan's own acceptance criterion below.
         "/v1/mock-exams",
         "/v1/mock-exams/{mockExamId}",
+        # Personalized Learning Journey (2026-11-07) — a deliberately isolated, temporary
+        # BFF-only feature (own snake_case/problem+json-free error envelope, own DB tables,
+        # no engine/Boost calls) approved as a stopgap while the Boost/engine/mobile content
+        # model mismatch is resolved. See learning_journey/__init__.py's module docstring.
+        "/v1/learning-journey",
+        # readiness/home (2026-11-08): new, learning-journey-only endpoints, NOT a sync of
+        # the engine-backed /v1/readiness and /v1/home above — those stay untouched.
+        "/v1/learning-journey/readiness",
+        "/v1/learning-journey/home",
+        "/v1/milestones",
+        "/v1/challenges",
+        "/v1/challenges/attempts",
+        "/v1/challenges/attempts/{attempt_id}",
+        "/v1/challenges/attempts/{attempt_id}/answers",
+        "/v1/challenges/attempts/{attempt_id}/submit",
+        "/v1/challenges/remediation",
     }
 )
 
