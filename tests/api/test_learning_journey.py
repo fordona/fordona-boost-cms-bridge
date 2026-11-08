@@ -81,20 +81,21 @@ async def test_start_attempt_without_idempotency_key_is_422(journey_harness: Har
     assert response.status_code == 422
 
 
-async def test_start_attempt_on_content_not_ready_challenge_uses_the_error_envelope(
+async def test_start_attempt_on_content_not_ready_challenge_still_starts(
     journey_harness: Harness,
 ) -> None:
+    # ch_001 (ms_001, the free milestone) is permanently MISSING_MEDIA — the readiness
+    # gate was deliberately removed so the free tier stays attemptable end-to-end.
     response = await journey_harness.client.post(
         "/v1/challenges/attempts",
         json={"challenge_id": "ch_001", "mode": "INITIAL"},
         headers={**journey_harness.auth(), "Idempotency-Key": str(uuid.uuid4())},
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 201
     body = response.json()
-    assert body["success"] is False
-    assert body["error"]["code"] == "CONTENT_NOT_READY"
-    assert "request_id" in body["error"]
+    assert body["success"] is True
+    assert body["data"]["question_count"] == 8
 
 
 async def test_repeated_idempotency_key_replays_through_the_api(

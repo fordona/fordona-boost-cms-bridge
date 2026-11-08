@@ -174,10 +174,12 @@ class ChallengeSummaryOut(LJModel):
     difficulty_distribution: dict[str, int]
     progress: ChallengeProgressSummary
     access: AccessState
-    # Not in the original spec — added so the client can show "content coming soon"
-    # instead of letting the user tap in and hit 422 CONTENT_NOT_READY on start.
+    # Not in the original spec — added so the client can show "content coming soon".
+    # The server no longer blocks starting an attempt on this (see service.py's
+    # start_attempt, 2026-11-08) — every ms_001 challenge is permanently
+    # MISSING_MEDIA, so enforcing it would make the free tier unattemptable.
     # Independent of `access`: a challenge can be unlocked/entitled and still not
-    # content-ready (every ms_001 challenge today, for example).
+    # content-ready.
     is_content_ready: bool
 
 
