@@ -1,7 +1,7 @@
 """The legacy-Boost-shape-to-block conversions used against real content (no block
 format sent, confirmed 2026-11-06 against boost-api-dev.fordona.dev)."""
 
-from boost_bridge.services.content_html import html_to_blocks, question_prompt_blocks
+from fordona_connect.services.content_html import html_to_blocks, question_prompt_blocks
 
 
 def test_plain_paragraph_becomes_one_text_block() -> None:

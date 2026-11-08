@@ -10,7 +10,7 @@ route table.
 
 import pytest
 
-from boost_bridge.main import create_app
+from fordona_connect.main import create_app
 from tests.conftest import Harness, make_settings
 
 RETIRED_PATHS = frozenset(

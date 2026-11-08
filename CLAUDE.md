@@ -1,4 +1,4 @@
-# fordona-boost-cms-bridge — Developer Reference
+# fordona-connect — Developer Reference
 
 ## What this repository is
 
@@ -36,7 +36,7 @@ If the plan looks wrong, ambiguous, or contradicts the code: stop, log a **BLOCK
 ## Layout
 
 ```
-src/boost_bridge/
+src/fordona_connect/
   main.py            app factory (create_app) + lifespan; `app` is built lazily
   container.py       composition root: builds clients, cache, DB, verifier; owns their lifecycle
   api/               routers (api/routes/*), dependencies (deps.py), OpenAPI error docs (responses.py)
@@ -64,7 +64,7 @@ uv run pytest -q                          # unit + api; integration auto-skips w
 uv run pytest -m integration              # Postgres via testcontainers (needs a Docker daemon)
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src scripts                   # strict
-uv run uvicorn boost_bridge.main:app --reload
+uv run uvicorn fordona_connect.main:app --reload
 ```
 
 A task is not done until **pytest, ruff (check + format) and mypy (`src scripts`)** are all green. Report real
@@ -136,9 +136,9 @@ counts (`N passed, M skipped`), never "tests pass".
 today's Boost, for dev and staging. It is deployed and run separately from the BFF, and its own
 `CLAUDE.md`-equivalent rules are:
 
-- **`boost_bridge` and `boost_stub` never import each other** (`[tool.importlinter]` in
+- **`fordona_connect` and `boost_stub` never import each other** (`[tool.importlinter]` in
   `pyproject.toml`, `uv run lint-imports --config pyproject.toml` in CI; `boost_stub` has its own
-  `config.py`/`logging.py`/`upstream.py` rather than reusing `boost_bridge`'s).
+  `config.py`/`logging.py`/`upstream.py` rather than reusing `fordona_connect`'s).
 - **`boost_stub` is excluded from this project's wheel**
   (`[tool.hatch.build.targets.wheel].packages`), so `uv sync --no-editable` never installs it. The
   Dockerfile's `boost-stub` stage copies `src/boost_stub` as source instead (with `PYTHONPATH`), and
@@ -217,4 +217,4 @@ own `test_changes.py` covers `CursorExpiredError` directly instead).
   and every lesson is "thin" with no real questions at all to top up.
 - The stub's grading batch calls Boost's single-question grading endpoint once **per configured
   locale** per real ref (today's Boost is presumed to answer one locale at a time); this is unverified
-  against real Boost (`boost_bridge`'s README has the same caveat for delivery).
+  against real Boost (`fordona_connect`'s README has the same caveat for delivery).

@@ -5,13 +5,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: bridge
-      POSTGRES_PASSWORD: bridge
-      POSTGRES_DB: boost_bridge
+      POSTGRES_USER: connect
+      POSTGRES_PASSWORD: connect
+      POSTGRES_DB: fordona_connect
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U bridge -d boost_bridge"]
+      test: ["CMD-SHELL", "pg_isready -U connect -d fordona_connect"]
       interval: 5s
       retries: 10
 
@@ -28,7 +28,7 @@ services:
     command: ["alembic", "upgrade", "head"]
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://bridge:bridge@postgres:5432/boost_bridge
+      DATABASE_URL: postgresql+asyncpg://connect:connect@postgres:5432/fordona_connect
     depends_on:
       postgres: { condition: service_healthy }
     profiles: ["app"]
@@ -37,7 +37,7 @@ services:
     build: { context: ., target: runtime }
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://bridge:bridge@postgres:5432/boost_bridge
+      DATABASE_URL: postgresql+asyncpg://connect:connect@postgres:5432/fordona_connect
       REDIS_URL: redis://redis:6379/0
     ports: ["8000:8000"]
     depends_on:

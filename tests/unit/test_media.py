@@ -2,7 +2,7 @@
 
 import pytest
 
-from boost_bridge.services.media import AssetUrlResolver, HmacUrlSigner, PlainUrlSigner
+from fordona_connect.services.media import AssetUrlResolver, HmacUrlSigner, PlainUrlSigner
 
 BASE = "https://media.test"
 KEY = b"super-secret-signing-key"

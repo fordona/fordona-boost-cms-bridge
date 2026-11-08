@@ -1,4 +1,4 @@
-"""The stub's own settings. Independent of ``boost_bridge.core.config``."""
+"""The stub's own settings. Independent of ``fordona_connect.core.config``."""
 
 from functools import lru_cache
 from pathlib import Path

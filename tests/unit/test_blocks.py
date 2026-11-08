@@ -2,8 +2,8 @@
 
 from pydantic import TypeAdapter
 
-from boost_bridge.clients.boost.models import ContentBlock
-from boost_bridge.schemas.content_blocks import (
+from fordona_connect.clients.boost.models import ContentBlock
+from fordona_connect.schemas.content_blocks import (
     AnimationBlockOut,
     AudioBlockOut,
     ImageBlockOut,
@@ -11,8 +11,8 @@ from boost_bridge.schemas.content_blocks import (
     TextBlockOut,
     VideoBlockOut,
 )
-from boost_bridge.services.blocks import render_blocks
-from boost_bridge.services.media import AssetUrlResolver, PlainUrlSigner
+from fordona_connect.services.blocks import render_blocks
+from fordona_connect.services.media import AssetUrlResolver, PlainUrlSigner
 
 BASE = "https://media.test"
 

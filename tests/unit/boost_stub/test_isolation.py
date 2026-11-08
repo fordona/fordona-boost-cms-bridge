@@ -1,4 +1,4 @@
-"""Fast, Docker-free checks of the ``boost_bridge``/``boost_stub`` split (plan §4.5).
+"""Fast, Docker-free checks of the ``fordona_connect``/``boost_stub`` split (plan §4.5).
 
 The real "does `docker build --target runtime` contain no boost_stub files"
 check needs a Docker build; that's `tests/integration/test_docker_stages.py`
@@ -35,4 +35,4 @@ def test_boost_stub_is_excluded_from_the_project_wheel() -> None:
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     packages = pyproject["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
     assert "src/boost_stub" not in packages
-    assert "src/boost_bridge" in packages
+    assert "src/fordona_connect" in packages

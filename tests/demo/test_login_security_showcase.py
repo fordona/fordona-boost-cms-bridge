@@ -150,7 +150,7 @@ async def test_unsigned_alg_none_token_is_rejected(harness: Harness) -> None:
 async def test_an_unverified_token_is_rejected_in_forward_mode(
     harness_factory: object,
 ) -> None:
-    """Even in forward_learner_token mode (where the bridge reuses the
+    """Even in forward_learner_token mode (where fordona-connect reuses the
     learner's own token upstream), a token that fails our own verification
     is rejected before any handler runs, so it is never stored for forwarding."""
     async with harness_factory(boost_auth_mode="forward_learner_token") as h:  # type: ignore[operator]

@@ -1,4 +1,4 @@
-"""Minimal structured logging. Independent of ``boost_bridge.core.logging``."""
+"""Minimal structured logging. Independent of ``fordona_connect.core.logging``."""
 
 import logging
 import sys

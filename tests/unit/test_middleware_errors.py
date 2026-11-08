@@ -4,12 +4,12 @@ import httpx
 import pytest
 from fastapi import FastAPI, Query
 
-from boost_bridge.core.errors import (
+from fordona_connect.core.errors import (
     ContentNotFoundError,
     UpstreamUnavailableError,
     register_exception_handlers,
 )
-from boost_bridge.core.middleware import RequestContextMiddleware
+from fordona_connect.core.middleware import RequestContextMiddleware
 
 
 def _app() -> FastAPI:

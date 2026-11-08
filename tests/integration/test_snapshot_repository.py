@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from boost_bridge.db.session import create_sessionmaker, ping
-from boost_bridge.db.snapshot_repository import SnapshotRepository, content_hash
+from fordona_connect.db.session import create_sessionmaker, ping
+from fordona_connect.db.snapshot_repository import SnapshotRepository, content_hash
 
 pytestmark = pytest.mark.integration
 

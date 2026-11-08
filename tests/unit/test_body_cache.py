@@ -5,11 +5,11 @@ import pytest
 import respx
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from boost_bridge.cache.keys import body_cache_key
-from boost_bridge.cache.redis_cache import RedisCache
-from boost_bridge.clients.boost.client import BoostClient
-from boost_bridge.core.errors import ContentNotFoundError, UpstreamUnavailableError
-from boost_bridge.services.body_cache import BodyCache, QuestionRef
+from fordona_connect.cache.keys import body_cache_key
+from fordona_connect.cache.redis_cache import RedisCache
+from fordona_connect.clients.boost.client import BoostClient
+from fordona_connect.core.errors import ContentNotFoundError, UpstreamUnavailableError
+from fordona_connect.services.body_cache import BodyCache, QuestionRef
 from tests.factories import lesson_payload, problem_payload, question_payload
 from tests.fakes import FakeClock
 

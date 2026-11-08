@@ -14,8 +14,8 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from boost_bridge.db.session import create_sessionmaker
-from boost_bridge.learning_journey.models import (
+from fordona_connect.db.session import create_sessionmaker
+from fordona_connect.learning_journey.models import (
     LearningJourneyAttempt,
     LearningJourneyAttemptQuestion,
     LearningJourneyChallenge,
@@ -23,7 +23,7 @@ from boost_bridge.learning_journey.models import (
     LearningJourneyQuestion,
     LearningJourneySession,
 )
-from boost_bridge.learning_journey.repository import LearningJourneyRepository
+from fordona_connect.learning_journey.repository import LearningJourneyRepository
 
 pytestmark = pytest.mark.integration
 
@@ -91,7 +91,7 @@ async def test_seed_counts_match_the_bundled_diagnostics(engine: AsyncEngine) ->
         (
             ROOT
             / "src"
-            / "boost_bridge"
+            / "fordona_connect"
             / "learning_journey"
             / "seed"
             / "learning_journey_mock_db.json"

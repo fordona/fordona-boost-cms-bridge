@@ -3,7 +3,7 @@
 Only what the generator needs is read: ids, a lesson's module, and a question's
 lesson, subject and difficulty. Never text, never answers.
 
-Field names follow ``boost_bridge.clients.boost.models``, which are still
+Field names follow ``fordona_connect.clients.boost.models``, which are still
 inferred from Boost's docs (README, "Verifying against live Boost"). Like that
 client, this accepts both the documented ``shared``/``translation`` nesting and a
 flat item.

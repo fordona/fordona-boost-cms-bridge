@@ -22,27 +22,27 @@ import respx
 from fakeredis import FakeAsyncRedis, FakeServer
 from fastapi import APIRouter, FastAPI
 
-from boost_bridge.api.deps import CurrentLearner, Locale
-from boost_bridge.cache.attempt_refs import AttemptRefCache
-from boost_bridge.cache.rate_limit import RateLimiter
-from boost_bridge.cache.redis_cache import RedisCache
-from boost_bridge.clients.boost.client import BoostClient
-from boost_bridge.clients.boost.client import create_http_client as create_boost_http_client
-from boost_bridge.clients.engine.client import EngineClient
-from boost_bridge.clients.engine.client import create_http_client as create_engine_http_client
-from boost_bridge.clients.engine.theory import EngineTheoryClient
-from boost_bridge.container import Services
-from boost_bridge.core.config import Settings
-from boost_bridge.core.context import learner_token_var
-from boost_bridge.core.security import JwksCache, TokenVerifier
-from boost_bridge.db.session import create_engine, create_sessionmaker
-from boost_bridge.learning_journey.repository import LearningJourneyRepository
-from boost_bridge.learning_journey.service import LearningJourneyService
-from boost_bridge.main import create_app
-from boost_bridge.services.body_cache import BodyCache
-from boost_bridge.services.media import build_asset_url_resolver
-from boost_bridge.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
-from boost_bridge.services.theory_service import TheoryService
+from fordona_connect.api.deps import CurrentLearner, Locale
+from fordona_connect.cache.attempt_refs import AttemptRefCache
+from fordona_connect.cache.rate_limit import RateLimiter
+from fordona_connect.cache.redis_cache import RedisCache
+from fordona_connect.clients.boost.client import BoostClient
+from fordona_connect.clients.boost.client import create_http_client as create_boost_http_client
+from fordona_connect.clients.engine.client import EngineClient
+from fordona_connect.clients.engine.client import create_http_client as create_engine_http_client
+from fordona_connect.clients.engine.theory import EngineTheoryClient
+from fordona_connect.container import Services
+from fordona_connect.core.config import Settings
+from fordona_connect.core.context import learner_token_var
+from fordona_connect.core.security import JwksCache, TokenVerifier
+from fordona_connect.db.session import create_engine, create_sessionmaker
+from fordona_connect.learning_journey.repository import LearningJourneyRepository
+from fordona_connect.learning_journey.service import LearningJourneyService
+from fordona_connect.main import create_app
+from fordona_connect.services.body_cache import BodyCache
+from fordona_connect.services.media import build_asset_url_resolver
+from fordona_connect.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
+from fordona_connect.services.theory_service import TheoryService
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
 
 BOOST = "https://boost.test"

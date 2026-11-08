@@ -13,7 +13,7 @@ import uuid
 
 import pytest
 
-from boost_bridge.learning_journey.service import LearningJourneyService
+from fordona_connect.learning_journey.service import LearningJourneyService
 from tests.conftest import Harness
 from tests.learning_journey.fakes import FakeEngineClient, FakeLearningJourneyRepository
 

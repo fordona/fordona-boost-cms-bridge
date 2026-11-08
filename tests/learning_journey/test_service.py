@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from boost_bridge.learning_journey.errors import (
+from fordona_connect.learning_journey.errors import (
     AnswerAlreadyFinalizedError,
     AttemptIncompleteError,
     ChallengeLockedError,
@@ -27,7 +27,7 @@ from boost_bridge.learning_journey.errors import (
     SubscriptionRequiredError,
     ValidationError,
 )
-from boost_bridge.learning_journey.service import LearningJourneyService
+from fordona_connect.learning_journey.service import LearningJourneyService
 from tests.learning_journey.fakes import FakeEngineClient, FakeLearningJourneyRepository
 
 USER = "kp_test_learner"
@@ -464,7 +464,7 @@ async def test_unsubscribed_user_cannot_start_a_paid_attempt(
 async def test_engine_failure_fails_closed_not_open(repo: FakeLearningJourneyRepository) -> None:
     class BrokenEngineClient:
         async def get(self, path: str, **kwargs: object) -> None:
-            from boost_bridge.core.errors import UpstreamUnavailableError
+            from fordona_connect.core.errors import UpstreamUnavailableError
 
             raise UpstreamUnavailableError()
 

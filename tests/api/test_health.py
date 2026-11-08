@@ -51,7 +51,7 @@ async def test_not_ready_when_a_dependency_is_down(
 async def test_hanging_dependency_times_out(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from boost_bridge.api.routes import health
+    from fordona_connect.api.routes import health
 
     monkeypatch.setattr(health, "_CHECK_TIMEOUT_SECONDS", 0.05)
 

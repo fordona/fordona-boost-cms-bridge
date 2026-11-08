@@ -4,10 +4,10 @@ import httpx
 import respx
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from boost_bridge.cache.redis_cache import RedisCache
-from boost_bridge.clients.boost.client import BoostClient
-from boost_bridge.services.body_cache import BodyCache
-from boost_bridge.services.release_prefetch import (
+from fordona_connect.cache.redis_cache import RedisCache
+from fordona_connect.clients.boost.client import BoostClient
+from fordona_connect.services.body_cache import BodyCache
+from fordona_connect.services.release_prefetch import (
     ReleasePrefetchGate,
     ReleasePrefetchRunner,
     parse_release_id,
