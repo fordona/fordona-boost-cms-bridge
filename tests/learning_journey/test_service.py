@@ -6,10 +6,11 @@ Fixed ids used throughout (confirmed against the bundled seed):
 - ``ch_028`` (milestone ``ms_008``, position 1, ``READY`` content, 12 questions
   ``q_266``..``q_277``) — the happy-path challenge; position 1 needs no predecessor
   completed.
-- ``ch_021`` (milestone ``ms_005``, position 2, ``READY`` content) — locked because
-  its predecessor ``ch_020`` (position 1) is ``MISSING_MEDIA`` and can never complete.
-- ``ch_001`` (position 1, ``MISSING_MEDIA``) — isolates the content-readiness gate
-  from the lock gate (position 1 always bypasses the lock check).
+- ``ch_021`` (milestone ``ms_005``, position 2, ``READY`` content) — locked in these
+  tests because its predecessor ``ch_020`` (position 1) is never completed here (the
+  lock check is independent of content readiness, which no longer gates starting).
+- ``ch_001`` (position 1, ``MISSING_MEDIA``) — the free milestone's first challenge;
+  used to confirm the (removed) content-readiness gate no longer blocks starting.
 """
 
 import uuid
@@ -21,7 +22,6 @@ from boost_bridge.learning_journey.errors import (
     AnswerAlreadyFinalizedError,
     AttemptIncompleteError,
     ChallengeLockedError,
-    ContentNotReadyError,
     IdempotencyKeyReusedError,
     RemediationNotEligibleError,
     SubscriptionRequiredError,
@@ -159,15 +159,22 @@ async def test_start_attempt_freezes_every_question_with_shuffled_labelled_optio
     assert "explanation" not in first
 
 
-async def test_start_attempt_rejects_content_not_ready(service: LearningJourneyService) -> None:
-    with pytest.raises(ContentNotReadyError):
-        await service.start_attempt(
-            USER,
-            challenge_id=NOT_READY_CHALLENGE,
-            mode="INITIAL",
-            idempotency_key=_key(),
-            request_body={"challenge_id": NOT_READY_CHALLENGE, "mode": "INITIAL"},
-        )
+async def test_start_attempt_on_content_not_ready_challenge_still_starts(
+    service: LearningJourneyService,
+) -> None:
+    # The readiness gate was deliberately removed (2026-11-08): every ms_001 challenge
+    # is permanently MISSING_MEDIA, so enforcing it would make the free tier
+    # unattemptable end-to-end. Starting must still succeed, images or not.
+    status, envelope = await service.start_attempt(
+        USER,
+        challenge_id=NOT_READY_CHALLENGE,
+        mode="INITIAL",
+        idempotency_key=_key(),
+        request_body={"challenge_id": NOT_READY_CHALLENGE, "mode": "INITIAL"},
+    )
+
+    assert status == 201
+    assert envelope["data"]["question_count"] == 8
 
 
 async def test_voluntary_before_first_completion_is_rejected(
@@ -488,8 +495,8 @@ async def test_subscribed_user_sees_every_milestone_unlocked_by_entitlement(
 
     out = await service.get_learning_journey(USER)
 
-    # ms_002 is still sequentially unreachable (ms_001 never completes — MISSING_MEDIA),
-    # but it must be for that reason, not a paywall, once the user is subscribed.
+    # ms_002 is still sequentially unreachable (nobody has completed ms_001 in this
+    # test), but it must be for that reason, not a paywall, once the user is subscribed.
     paid_milestone = next(m for m in out.milestones if m.milestone_id == "ms_002")
     assert paid_milestone.access.reason == "PREREQUISITE_NOT_MET"
 

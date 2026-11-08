@@ -34,7 +34,6 @@ from boost_bridge.learning_journey.errors import (
     AttemptIncompleteError,
     AttemptNotActiveError,
     ChallengeLockedError,
-    ContentNotReadyError,
     IdempotencyKeyReusedError,
     NotFoundError,
     RemediationNotEligibleError,
@@ -575,11 +574,11 @@ class LearningJourneyService:
                 raise NotFoundError("Challenge not found.")
             await self._assert_challenge_unlocked(assignment_id, challenge)
             await self._assert_entitled(app_user_id, challenge.milestone_id)
-            if challenge.content_readiness.get("status") != "READY":
-                raise ContentNotReadyError(
-                    "This challenge's content is not ready to be delivered.",
-                    details={"challenge_id": challenge_id},
-                )
+            # Readiness gate intentionally removed (2026-11-08): every ms_001 (free-tier)
+            # challenge is permanently MISSING_MEDIA — the referenced images were never
+            # captured/uploaded — so enforcing this would make the free tier unattemptable
+            # end-to-end. `is_content_ready` is still surfaced to clients (see schemas.py)
+            # so they can decide how to render a question whose images are absent.
 
             progress = await self._repo.get_progress(
                 assignment_id=assignment_id, challenge_id=challenge_id
