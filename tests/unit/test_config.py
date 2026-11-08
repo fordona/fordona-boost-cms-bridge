@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from boost_bridge.core.config import BoostAuthMode, Environment, Settings
+from fordona_connect.core.config import BoostAuthMode, Environment, Settings
 
 _AUTH = {
     "kinde_issuer_uri": "https://tenant.kinde.com",
@@ -18,6 +18,16 @@ def test_csv_lists_are_split() -> None:
     settings = _settings(**_AUTH, cors_allowed_origins="http://a, http://b,")
     assert settings.kinde_audience == ["aud-a", "aud-b"]
     assert settings.cors_allowed_origins == ["http://a", "http://b"]
+
+
+def test_driverless_database_url_uses_asyncpg() -> None:
+    settings = _settings(**_AUTH, database_url="postgresql://u:p@db:5432/fordona")
+    assert settings.database_url == "postgresql+asyncpg://u:p@db:5432/fordona"
+
+
+def test_unsupported_database_driver_is_refused_at_startup() -> None:
+    with pytest.raises(ValidationError, match="asyncpg"):
+        _settings(**_AUTH, database_url="postgresql+psycopg://u:p@db:5432/fordona")
 
 
 def test_auth_cannot_be_disabled_outside_local() -> None:

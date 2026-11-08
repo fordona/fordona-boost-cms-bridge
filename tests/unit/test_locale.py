@@ -1,6 +1,6 @@
 import pytest
 
-from boost_bridge.core.locale import UnsupportedLocaleError, match_locale, resolve_locale
+from fordona_connect.core.locale import UnsupportedLocaleError, match_locale, resolve_locale
 
 
 @pytest.mark.parametrize(

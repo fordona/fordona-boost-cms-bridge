@@ -21,7 +21,7 @@ depends_on: str | Sequence[str] | None = None
 _SEED_PATH = (
     Path(__file__).resolve().parents[2]
     / "src"
-    / "boost_bridge"
+    / "fordona_connect"
     / "learning_journey"
     / "seed"
     / "learning_journey_mock_db.json"

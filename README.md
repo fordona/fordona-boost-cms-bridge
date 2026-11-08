@@ -1,4 +1,4 @@
-# fordona-boost-cms-bridge
+# fordona-connect
 
 The backend for frontend (BFF) of the Fordona Theory App, being rebuilt for the theory first shipment. It will compose fordona-engine's lesson, attempt and progress decisions with answer-free content from the Boost CMS (`boost-api.fordona.io`; [docs](https://boost.fordona.io/api-docs)).
 
@@ -9,7 +9,7 @@ The plan, the task tracker and the progress log are in **[docs/](docs/)** (`ford
 ## Layout
 
 ```
-src/boost_bridge/
+src/fordona_connect/
   main.py            app factory + lifespan
   container.py       composition root: builds clients, cache, DB, verifier
   api/               routers, dependencies, OpenAPI error docs
@@ -32,12 +32,21 @@ cp .env.example .env            # Kinde + Boost values are pre-filled for the fo
 uv sync
 docker compose up -d postgres redis
 uv run alembic upgrade head
-uv run uvicorn boost_bridge.main:app --reload
+uv run uvicorn fordona_connect.main:app --reload
 ```
 
 - Interactive docs are at http://localhost:8000/docs; the readiness probe is at http://localhost:8000/health/ready.
 - To try it without Kinde, set `AUTH_ENABLED=false`. This is only allowed with `APP_ENV=local`; in any other environment the service refuses to start.
 - To run the whole stack in containers instead: `docker compose --profile app up --build`.
+
+## Database
+
+fordona-connect uses **fordona-engine's Postgres database**. It keeps everything it owns in the `connect_learning` schema, Alembic's `alembic_version` table included, and never creates or changes anything in the engine's `public` schema. Migrations create the schema if it is missing.
+
+- `DATABASE_URL` may be the plain `postgresql://user:pass@host:port/db` form; it is rewritten to `postgresql+asyncpg://`. Other drivers are refused at startup.
+- asyncpg's prepared-statement caches are off and statement names are unique, so fordona-connect works behind a transaction-mode pooler (the engine's production URL sets `prepareThreshold=0` for the same reason).
+- A database that ran fordona-connect's migrations before this change has its tables in `public`. The next `alembic upgrade head` creates fresh tables in `connect_learning` and leaves the old ones unused; drop them by hand once nothing needs them. For a local Docker database, `docker compose down -v` is simpler.
+- Budget connections: fordona-connect's pool uses up to 10 (`pool_size=5`, `max_overflow=5`) on top of the engine's 20.
 
 ## API at a glance
 
@@ -64,14 +73,14 @@ export TOKEN=...   # Boost-audience Kinde access token; never commit or paste it
 curl -s -H "Authorization: Bearer $TOKEN" "https://boost-api.fordona.io/v1/delivery/lessons?locale=sv-SE&pageSize=1"
 ```
 
-Compare the first response against `src/boost_bridge/clients/boost/models.py`. Check especially the form of `assetBaseUrl` and whether `availableLocales` and `updatedAt` are present.
+Compare the first response against `src/fordona_connect/clients/boost/models.py`. Check especially the form of `assetBaseUrl` and whether `availableLocales` and `updatedAt` are present.
 
 ## Tests and checks
 
 ```bash
 uv run pytest                     # unit + API tests; integration tests auto-skip without Docker
 uv run pytest -m integration      # Postgres repository tests (needs a running Docker daemon)
-uv run pytest --cov=boost_bridge --cov-report=term-missing
+uv run pytest --cov=fordona_connect --cov-report=term-missing
 uv run ruff check . && uv run ruff format --check . && uv run mypy src
 ```
 

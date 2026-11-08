@@ -2,17 +2,17 @@
 
 import pytest
 
-from boost_bridge.clients.boost.models import BoostQuestion
-from boost_bridge.clients.engine.theory import (
+from fordona_connect.clients.boost.models import BoostQuestion
+from fordona_connect.clients.engine.theory import (
     EngineAttemptItemRef,
     EngineHome,
     EngineHomeTabs,
     EngineHomeTabState,
     EngineHomeUser,
 )
-from boost_bridge.core.errors import ContentNotFoundError
-from boost_bridge.services import theory_mappers as mappers
-from boost_bridge.services.media import AssetUrlResolver, PlainUrlSigner
+from fordona_connect.core.errors import ContentNotFoundError
+from fordona_connect.services import theory_mappers as mappers
+from fordona_connect.services.media import AssetUrlResolver, PlainUrlSigner
 from tests.factories import question_payload
 
 BASE = "https://media.test"

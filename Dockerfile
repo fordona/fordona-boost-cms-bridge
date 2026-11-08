@@ -36,7 +36,7 @@ EXPOSE 8000
 # separate pre-deploy step (a single-container "Application" on Dokploy, say)
 # still migrate safely — it's a no-op once the DB is already current, so
 # running it on every container start (incl. every replica) is harmless.
-CMD ["sh", "-c", "alembic upgrade head && uvicorn boost_bridge.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --no-access-log"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn fordona_connect.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --no-access-log"]
 
 # ---- boost-stub ---------------------------------------------------------------
 # The Boost stub (plan §4.5): a separate deployable, dev and staging only. It

@@ -2,7 +2,7 @@
 
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from boost_bridge.cache.rate_limit import RateLimiter
+from fordona_connect.cache.rate_limit import RateLimiter
 
 
 def _limiter(*, read_limit: int = 2, write_limit: int = 1) -> RateLimiter:

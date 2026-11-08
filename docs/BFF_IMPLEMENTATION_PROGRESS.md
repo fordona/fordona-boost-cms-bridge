@@ -4,7 +4,7 @@ The implementation tracker for `fordona-theory-first-shipment-architecture.md` (
 every repository the plan touches:
 
 - **fordona-engine:** Spring Boot, `learn/theory`.
-- **fordona-boost-cms-bridge:** the BFF and the Boost stub.
+- **fordona-connect:** the BFF and the Boost stub.
 - **Work owned by others:** tracked so blockers stay visible.
 
 ---
@@ -42,7 +42,7 @@ every repository the plan touches:
 - `- [x]` done
 - `- [x] ~~…~~` cancelled
 - **Dep:** tasks that must be ticked first
-- **Repo:** `ENG` = fordona-engine, `BFF` = fordona-boost-cms-bridge, `EXT` = outside our repos
+- **Repo:** `ENG` = fordona-engine, `BFF` = fordona-connect, `EXT` = outside our repos
 
 **Test commands:**
 - **ENG:** `./gradlew test` (all) or `./gradlew test --tests '<Class>'`; `./gradlew compileJava` for a fast check.
@@ -78,7 +78,7 @@ every repository the plan touches:
 - [ ] **P0 — phase done**
 
 - [x] **P0.T1 Copy the plan where every session can read it** · Repo: BFF · Dep: none
-  - [x] Copy `fordona-theory-first-shipment-architecture.md` into `fordona-boost-cms-bridge/docs/`.
+  - [x] Copy `fordona-theory-first-shipment-architecture.md` into `fordona-connect/docs/`.
   - [x] Copy this file and `PROGRESS__STATUS.md` into the same folder. That folder is the one sessions are told to
         read; it must be the single live copy.
   - [x] Add a one-line pointer to the plan in `fordona-engine/CLAUDE.md`, as a "Theory first shipment" reference.
@@ -108,10 +108,10 @@ every repository the plan touches:
 - [ ] **P0.T4 Postgres hardening** · Repo: EXT
   - [ ] Remove the external port 5432 on `fordona-gearbox-l1bqji`, or IP-restrict it. Use an SSH tunnel for DBeaver.
   - [ ] Create the role and database:
-        `CREATE ROLE boost_bridge LOGIN PASSWORD '…'; CREATE DATABASE boost_bridge OWNER boost_bridge; REVOKE CONNECT ON DATABASE boost_bridge FROM PUBLIC;`
+        `CREATE ROLE fordona_connect LOGIN PASSWORD '…'; CREATE DATABASE fordona_connect OWNER fordona_connect; REVOKE CONNECT ON DATABASE fordona_connect FROM PUBLIC;`
   - [ ] Record `SHOW max_connections;` and the engine's Hikari size in `PROGRESS__STATUS.md`.
   - **Acceptance:** an `nc`/`psql` attempt from outside the server to port 5432 fails (or succeeds only from an
-    allowed IP), and `boost_bridge` can connect only to its own database.
+    allowed IP), and `fordona_connect` can connect only to its own database.
 
 - [ ] **P0 Phase exit:** T1–T4 ticked; no BLOCKED entries open in `PROGRESS__STATUS.md`.
 
@@ -143,7 +143,7 @@ every repository the plan touches:
   - [ ] Redis service `bff-redis` in the engine's Dokploy project, with no external port.
   - [ ] Application `fordona-bff`: Dockerfile build, container port 8000, domain with HTTPS (Let's Encrypt).
   - [ ] Environment: the existing variables only (`APP_ENV=staging`, Kinde trio, `BOOST_*` with `service_token`,
-        `DATABASE_URL` for `boost_bridge`, `REDIS_URL`).
+        `DATABASE_URL` for `fordona_connect`, `REDIS_URL`).
   - [ ] Health check (Swarm settings JSON, Python-based, because the image has no curl).
   - [ ] Migrations: `alembic upgrade head` (command override, or once via the container terminal).
   - **Acceptance:**
@@ -235,7 +235,7 @@ every repository the plan touches:
   - [x] Forwards the caller's `Authorization` header unchanged; adds `X-Boost-Stub: true` to every response.
   - [x] Cache headers per §13.5.
   - [x] Isolation:
-    - [x] add `import-linter` with a contract that `boost_bridge` must not import `boost_stub`, run in CI;
+    - [x] add `import-linter` with a contract that `fordona_connect` must not import `boost_stub`, run in CI;
     - [x] a Dockerfile stage `boost-stub` (CMD `uvicorn boost_stub.main:app --port 8080`);
     - [x] the `runtime` stage must not copy `src/boost_stub`.
   - **Unit tests (respx-mocked upstream):**

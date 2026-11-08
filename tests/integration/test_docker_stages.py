@@ -43,7 +43,7 @@ def _run(*args: str, timeout: float = 300) -> subprocess.CompletedProcess[str]:
 def runtime_image() -> str:
     if not _docker_available():
         pytest.skip("Docker is not available")
-    tag = "fordona-bridge-test:runtime"
+    tag = "fordona-connect-test:runtime"
     result = _run("docker", "build", "--target", "runtime", "-t", tag, ".")
     assert result.returncode == 0, result.stdout + result.stderr
     return tag
@@ -53,7 +53,7 @@ def runtime_image() -> str:
 def boost_stub_image() -> str:
     if not _docker_available():
         pytest.skip("Docker is not available")
-    tag = "fordona-bridge-test:boost-stub"
+    tag = "fordona-connect-test:boost-stub"
     result = _run("docker", "build", "--target", "boost-stub", "-t", tag, ".")
     assert result.returncode == 0, result.stdout + result.stderr
     return tag
@@ -78,7 +78,7 @@ def test_runtime_image_contains_no_boost_stub_files(runtime_image: str) -> None:
     assert result.stdout.strip() == "", f"boost_stub files found in runtime image:\n{result.stdout}"
 
 
-def test_runtime_image_still_contains_boost_bridge(runtime_image: str) -> None:
+def test_runtime_image_still_contains_fordona_connect(runtime_image: str) -> None:
     result = _run(
         "docker",
         "run",
@@ -87,7 +87,7 @@ def test_runtime_image_still_contains_boost_bridge(runtime_image: str) -> None:
         "python",
         runtime_image,
         "-c",
-        "import boost_bridge; print('ok')",
+        "import fordona_connect; print('ok')",
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "ok" in result.stdout

@@ -22,7 +22,7 @@ log = get_logger(__name__)
 # Headings were missing here entirely until 2026-11-06, which didn't just lose their
 # styling — ``handle_starttag`` drops an unsupported tag's content outright, so every
 # section heading in real Boost lesson content vanished with no trace. Found via
-# ``boost_bridge.services.content_html`` (this module's BFF-side port, which carries
+# ``fordona_connect.services.content_html`` (this module's BFF-side port, which carries
 # the same fix) and ported back here to keep the two in sync.
 _BLOCK_TAGS = frozenset({"p", "div", "br"})
 _LIST_TAGS = frozenset({"ul", "ol"})
@@ -149,7 +149,7 @@ def question_prompt_blocks(
     """A prompt: a ``text`` block (required first, plan §4.6) plus an optional image.
 
     ``shared.mediaId`` is already an asset id (``BoostQuestion.shared.media_id``,
-    one of the field names ``boost_bridge``'s README calls confirmed), so no URL
+    one of the field names ``fordona_connect``'s README calls confirmed), so no URL
     recovery is needed — only blocks carry asset ids at all (plan §4.6).
     """
     text = (question_text or "").strip()

@@ -6,23 +6,23 @@ from datetime import UTC, datetime
 import pytest
 from fakeredis import FakeAsyncRedis, FakeServer
 
-from boost_bridge.cache.keys import cache_key, refresh_lock_key
-from boost_bridge.cache.redis_cache import RedisCache
-from boost_bridge.clients.boost.client import BoostRequests
-from boost_bridge.clients.boost.errors import (
+from fordona_connect.cache.keys import cache_key, refresh_lock_key
+from fordona_connect.cache.redis_cache import RedisCache
+from fordona_connect.clients.boost.client import BoostRequests
+from fordona_connect.clients.boost.errors import (
     BoostMisconfigured,
     BoostNotFound,
     BoostTimeout,
     BoostUnavailable,
 )
-from boost_bridge.core.errors import (
+from fordona_connect.core.errors import (
     ContentNotFoundError,
     UpstreamMisconfiguredError,
     UpstreamTimeoutError,
     UpstreamUnavailableError,
 )
-from boost_bridge.db.snapshot_repository import Snapshot
-from boost_bridge.services.content_cache import ContentCache, Source
+from fordona_connect.db.snapshot_repository import Snapshot
+from fordona_connect.services.content_cache import ContentCache, Source
 from tests.factories import module_payload
 from tests.fakes import FakeClock, FakeFetcher, InMemorySnapshots
 
@@ -380,4 +380,4 @@ def test_cache_key_varies_by_locale_and_params() -> None:
     en = cache_key(BoostRequests.modules("en-GB", page=1, page_size=20))
     page2 = cache_key(BoostRequests.modules("sv-SE", page=2, page_size=20))
     assert len({sv, en, page2}) == 3
-    assert sv.startswith("bridge:v1:module_list:sv-SE:")
+    assert sv.startswith("connect:v1:module_list:sv-SE:")

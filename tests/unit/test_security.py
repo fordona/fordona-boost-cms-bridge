@@ -9,8 +9,8 @@ import jwt
 import pytest
 import respx
 
-from boost_bridge.core.errors import UnauthorizedError, UpstreamUnavailableError
-from boost_bridge.core.security import JwksCache, TokenVerifier
+from fordona_connect.core.errors import UnauthorizedError, UpstreamUnavailableError
+from fordona_connect.core.security import JwksCache, TokenVerifier
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
 from tests.fakes import FakeClock
 

@@ -4,14 +4,14 @@ import httpx
 import pytest
 import respx
 
-from boost_bridge.clients.boost.client import BoostClient, BoostRequests
-from boost_bridge.clients.boost.errors import (
+from fordona_connect.clients.boost.client import BoostClient, BoostRequests
+from fordona_connect.clients.boost.errors import (
     BoostMisconfigured,
     BoostNotFound,
     BoostTimeout,
     BoostUnavailable,
 )
-from boost_bridge.core.context import correlation_id_var, learner_token_var
+from fordona_connect.core.context import correlation_id_var, learner_token_var
 from tests.factories import module_payload, page_payload, problem_payload, question_payload
 
 BASE = "https://boost.test"

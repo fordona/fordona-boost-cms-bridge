@@ -4,7 +4,7 @@ Nothing connects at build time: Redis, the engine and httpx all connect
 lazily, so this runs without any infrastructure.
 """
 
-from boost_bridge.container import build_services
+from fordona_connect.container import build_services
 from tests.conftest import make_settings
 
 

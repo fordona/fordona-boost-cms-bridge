@@ -1,0 +1,35 @@
+"""Cache keys for Boost requests.
+
+``connect:{schema}:{resource}:{locale}:{digest}``. Bumping ``CACHE_SCHEMA_VERSION``
+invalidates every entry on deploy without a manual flush. Use it when the
+*cached* representation changes. A mapper or response-schema change does not
+need it, because payloads are re-mapped on every read.
+"""
+
+import hashlib
+import json
+from typing import Any
+
+from fordona_connect.clients.boost.client import BoostRequest
+
+CACHE_SCHEMA_VERSION = "v1"
+
+
+def cache_key(request: BoostRequest[Any]) -> str:
+    material = json.dumps(
+        [request.path, request.locale, list(request.params)], separators=(",", ":")
+    )
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
+    return f"connect:{CACHE_SCHEMA_VERSION}:{request.resource}:{request.locale}:{digest}"
+
+
+def refresh_lock_key(key: str) -> str:
+    return f"{key}:refresh-lock"
+
+
+def body_cache_key(entity: str, content_id: str, version: str, locale: str) -> str:
+    """Plan §13/P6.T3: ``(entity, id, version, locale)`` — no digest needed, unlike
+    ``cache_key``'s list/query caching, since this tuple is already a clean,
+    collision-free compound key on its own.
+    """
+    return f"connect:{CACHE_SCHEMA_VERSION}:body:{entity}:{content_id}:{version}:{locale}"

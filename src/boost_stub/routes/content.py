@@ -3,7 +3,7 @@ single-question revision endpoints, proxied from today's Boost (plan §4.5).
 
 **The multi-value ``id=`` filter is enforced by the stub itself**, not assumed
 of upstream Boost: a filtered request fetches every page from Boost and filters
-in Python. Boost's own id-filter support is unverified (``boost_bridge``'s
+in Python. Boost's own id-filter support is unverified (``fordona_connect``'s
 README), and the plan requires this filter to work *now*, on today's Boost.
 """
 

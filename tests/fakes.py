@@ -4,8 +4,8 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from boost_bridge.clients.boost.client import BoostRequest
-from boost_bridge.db.snapshot_repository import Snapshot
+from fordona_connect.clients.boost.client import BoostRequest
+from fordona_connect.db.snapshot_repository import Snapshot
 
 
 class FakeClock:

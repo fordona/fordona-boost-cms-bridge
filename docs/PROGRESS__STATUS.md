@@ -2962,3 +2962,22 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   needs.
 - **Ready to continue:** YES, against the stub as before. Pointing either service at real Boost for
   anything beyond the already-working single-item/list routes still waits on P9.T1.
+
+### 2026-11-08 · Owner-requested · Shared engine database; renamed to fordona-connect
+
+- **Status:** DONE (not a tracker task)
+- **Shared database:** the service now uses fordona-engine's Postgres. Everything it owns, Alembic's
+  `alembic_version` included, lives in the `connect_learning` schema (`db/connection.DB_SCHEMA`);
+  `migrations/env.py` creates the schema and sets `SET LOCAL search_path` so migrations 0001–0003
+  run unchanged. `DATABASE_URL` accepts `postgresql://`/`postgres://` (rewritten to asyncpg; the
+  pre-deploy step had crashed with `No module named 'psycopg'` under SQLAlchemy 2.1), and asyncpg's
+  statement caches are off for transaction-mode poolers (the engine's prod URL sets
+  `prepareThreshold=0`).
+- **Rename:** the project is now **fordona-connect**, moving away from the "Boost CMS bridge" name.
+  Python package `boost_bridge` → `fordona_connect`, User-Agent `fordona-connect/0.1`, Redis key
+  prefix `bridge:` → `connect:` (existing cache entries, rate-limit windows and prefetch locks start
+  cold), local Docker Postgres `connect`/`fordona_connect` (`docker compose down -v` once).
+  `boost_stub` keeps its name. Entries above this one, the plan and `WORK_LOG.md` keep the old names
+  as history.
+- **Not done here:** the GitHub repo rename, and fordona-engine's references to the old name
+  (`CLAUDE.md`, comments in `V1_0_16`/`V1_0_18` migrations and `ErrorCode.java`).

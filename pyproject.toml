@@ -1,5 +1,5 @@
 [project]
-name = "fordona-boost-cms-bridge"
+name = "fordona-connect"
 version = "0.1.0"
 description = "Theory content API for the Fordona Theory App, backed by the Boost CMS delivery API."
 readme = "README.md"
@@ -43,7 +43,7 @@ build-backend = "hatchling.build"
 # carry it (plan §4.5). The `boost-stub` stage runs it from source instead
 # (see the Dockerfile) — it is a separate deployable, not a second package of
 # this project.
-packages = ["src/boost_bridge"]
+packages = ["src/fordona_connect"]
 
 [tool.ruff]
 line-length = 100
@@ -59,7 +59,7 @@ ignore = ["S101"]  # assert is fine in tests; production code never uses it for 
 "migrations/**" = ["N999"]
 
 [tool.importlinter]
-root_packages = ["boost_bridge", "boost_stub"]
+root_packages = ["fordona_connect", "boost_stub"]
 
 [[tool.importlinter.contracts]]
 # The BFF and the Boost stub are separate deployables (plan §4.5): one
@@ -67,7 +67,7 @@ root_packages = ["boost_bridge", "boost_stub"]
 # internals, or a change to one could silently break the other at runtime.
 name = "The BFF and the Boost stub never import each other"
 type = "independence"
-modules = ["boost_bridge", "boost_stub"]
+modules = ["fordona_connect", "boost_stub"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -79,7 +79,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["boost_bridge"]
+source = ["fordona_connect"]
 branch = true
 
 [tool.mypy]

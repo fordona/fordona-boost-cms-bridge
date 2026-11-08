@@ -6,10 +6,10 @@ import httpx
 import pytest
 import respx
 
-from boost_bridge.clients.engine.client import EngineClient
-from boost_bridge.clients.engine.errors import EnginePassthroughError
-from boost_bridge.core.context import correlation_id_var, learner_token_var
-from boost_bridge.core.errors import UpstreamMisconfiguredError, UpstreamUnavailableError
+from fordona_connect.clients.engine.client import EngineClient
+from fordona_connect.clients.engine.errors import EnginePassthroughError
+from fordona_connect.core.context import correlation_id_var, learner_token_var
+from fordona_connect.core.errors import UpstreamMisconfiguredError, UpstreamUnavailableError
 
 BASE = "https://engine.test"
 

@@ -17,7 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from boost_bridge.learning_journey.models import (
+from fordona_connect.learning_journey.models import (
     LearningJourneyAttempt,
     LearningJourneyAttemptQuestion,
     LearningJourneyChallenge,
@@ -34,7 +34,7 @@ from boost_bridge.learning_journey.models import (
 _SEED_PATH = (
     Path(__file__).resolve().parents[2]
     / "src"
-    / "boost_bridge"
+    / "fordona_connect"
     / "learning_journey"
     / "seed"
     / "learning_journey_mock_db.json"
