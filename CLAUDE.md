@@ -2,7 +2,7 @@
 
 ## What this repository is
 
-The **BFF** (backend for frontend) of the Fordona Theory App, plus — from P2 onwards — the **Boost stub**.
+The **BFF** (backend for frontend) of the Fordona Theory App.
 
 - **Today:** only health probes are routed. The Phase 1 catalogue routes were retired (P1.T1); the
   auth/locale dependencies, Boost client, read-through cache and snapshot store remain as the
@@ -46,12 +46,8 @@ src/fordona_connect/
   db/                last-known-good snapshot table, repository, engine
   schemas/           public API Pydantic models (camelCase JSON)
   core/              config, logging, middleware, errors, auth (Kinde JWT), locale, clock, context
-src/boost_stub/      the Boost stub — a separate FastAPI app, see "The Boost stub" below
 migrations/          Alembic (`alembic upgrade head` is a pre-deploy step, never at app start)
-scripts/             developer scripts, not in the image: `generate_stub_templates.py` (P2.T2)
-stub-data/           the stub's generated data (`templates.json`, `synthetic.json`) — not yet
-                     committed; the live run needs a Boost delivery token (P0.T3)
-tests/               unit/ (incl. boost_stub/) · api/ · integration/ (Docker) · demo/ · contract/
+tests/               unit/ · api/ · integration/ (Docker) · demo/ · contract/
 ```
 
 ---
@@ -63,11 +59,11 @@ uv sync                                   # install (uv.lock is the only lockfil
 uv run pytest -q                          # unit + api; integration auto-skips without Docker
 uv run pytest -m integration              # Postgres via testcontainers (needs a Docker daemon)
 uv run ruff check . && uv run ruff format --check .
-uv run mypy src scripts                   # strict
+uv run mypy src                           # strict
 uv run uvicorn fordona_connect.main:app --reload
 ```
 
-A task is not done until **pytest, ruff (check + format) and mypy (`src scripts`)** are all green. Report real
+A task is not done until **pytest, ruff (check + format) and mypy (`src`)** are all green. Report real
 counts (`N passed, M skipped`), never "tests pass".
 
 ---
@@ -130,51 +126,6 @@ counts (`N passed, M skipped`), never "tests pass".
   new secret-bearing keys there.
 - Never swallow an exception silently — at least `log.warning` with context.
 
-### The Boost stub (plan §4.5)
-
-`src/boost_stub/` is a **second, independent FastAPI app** implementing the plan §13 contract over
-today's Boost, for dev and staging. It is deployed and run separately from the BFF, and its own
-`CLAUDE.md`-equivalent rules are:
-
-- **`fordona_connect` and `boost_stub` never import each other** (`[tool.importlinter]` in
-  `pyproject.toml`, `uv run lint-imports --config pyproject.toml` in CI; `boost_stub` has its own
-  `config.py`/`logging.py`/`upstream.py` rather than reusing `fordona_connect`'s).
-- **`boost_stub` is excluded from this project's wheel**
-  (`[tool.hatch.build.targets.wheel].packages`), so `uv sync --no-editable` never installs it. The
-  Dockerfile's `boost-stub` stage copies `src/boost_stub` as source instead (with `PYTHONPATH`), and
-  the `runtime` stage must never copy it. `tests/integration/test_docker_stages.py` builds both
-  stages for real and checks this (needs Docker).
-- **No identity of its own: every token is probed against Boost** (`auth.py`). A delivery-scoped
-  endpoint probes `GET /v1/delivery/modules`; a grading-scoped one probes a reserved, never-real id
-  at `/v1/grading/questions/{id}/revisions/{version}` (404 = valid scope, since the id doesn't
-  exist). A good result is cached per token for 30 s; a bad one is never cached. This applies even to
-  requests the stub answers **without** calling Boost (the change feed, `question-templates`,
-  `topics`), not just the ones it proxies.
-- **The change feed is polled, not transactional** (`changes.py`, `container.poll_once`): every
-  `STUB_POLL_SECONDS` it lists Boost (modules, lessons, questions) plus the generated templates and
-  synthetic questions, diffs against the last snapshot in its SQLite file, and writes one row per
-  difference. A row is invisible for `STUB_VISIBILITY_LAG_SECONDS` (commit-order safety, §13.3); rows
-  older than `STUB_RETENTION_SECONDS` are purged, and a cursor at or before the purge watermark gets
-  `CURSOR_EXPIRED`. `STUB_POLL_TOKEN` is the stub's **own** delivery credential for this background
-  job — distinct from a caller's token, which is only ever forwarded, never stored.
-- **Synthetic question ids never reach Boost.** `GeneratedData` (`data.py`) indexes
-  `stub-data/templates.json`/`synthetic.json` by id; every route checks there first and only calls
-  Boost for the ids it doesn't recognise.
-- Register a **literal route before a path-parameter route on the same prefix**
-  (`/questions/revisions` before `/questions/{question_id}`) — FastAPI matches registration order, so
-  the reverse order makes the batch endpoint invisible (it 404s as if `question_id="revisions"`).
-  `routes/content.py` keeps this order with a comment; get it wrong and
-  `test_stub_against_contract_suite.py` catches it immediately.
-- A bare query-parameter name (`module_id: str`) binds to that Python name, **not** Boost's
-  camelCase one (`moduleId`) — always `Annotated[str, Query(alias="moduleId")]`.
-
-**Acceptance (P2.T1 + P2.T3):** `tests/unit/boost_stub/test_stub_against_contract_suite.py` runs the
-real `tests/contract/boost_content_v1` suite, as a subprocess, against a live stub instance backed by
-a small in-process stand-in for Boost (`fake_boost.py`) — no Docker, no real Boost needed. It
-currently deselects `test_expired_cursor_is_410`: a single short-lived instance can't age a cursor
-past retention without also purging the history the *other* feed tests read from `0` (the tracker's
-own `test_changes.py` covers `CursorExpiredError` directly instead).
-
 ---
 
 ## Testing
@@ -212,9 +163,3 @@ own `test_changes.py` covers `CursorExpiredError` directly instead).
 - A `subprocess.run(..., text=True)` capturing Docker's own output needs `encoding="utf-8",
   errors="replace"` explicitly on Windows — the default locale codec (cp1252) can't decode
   buildkit's box-drawing characters and crashes the capture thread.
-- `stub-data/templates.json`/`synthetic.json` are not committed yet: the live generator run needs a
-  Boost delivery token (P0.T3). Until then the stub has nothing to serve for `question-templates`,
-  and every lesson is "thin" with no real questions at all to top up.
-- The stub's grading batch calls Boost's single-question grading endpoint once **per configured
-  locale** per real ref (today's Boost is presumed to answer one locale at a time); this is unverified
-  against real Boost (`fordona_connect`'s README has the same caveat for delivery).

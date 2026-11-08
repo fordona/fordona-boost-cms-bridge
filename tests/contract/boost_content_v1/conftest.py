@@ -1,9 +1,8 @@
 """Configuration and data discovery for the Boost content API v1 contract (plan §13).
 
-The suite is a black-box check of a running server: the Boost stub in dev/CI,
-Boost staging for the Boost owner's acceptance (§13.6). It never imports
-``fordona_connect`` or ``boost_stub``, so it judges the server against the contract,
-not against our own models.
+The suite is a black-box check of a running server: Boost staging, for the Boost
+owner's acceptance (§13.6). It never imports ``fordona_connect``, so it judges the
+server against the contract, not against our own models.
 
 Environment:
 

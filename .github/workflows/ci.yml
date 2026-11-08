@@ -24,10 +24,9 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run mypy src scripts
-      - run: uv run lint-imports --config pyproject.toml
+      - run: uv run mypy src
       # Integration tests run too: the runner has Docker for testcontainers,
-      # which also covers the Docker-stage isolation check (P2.T3).
+      # which also builds the runtime image for real.
       - run: uv run pytest -m "not contract"
 
   contract-boost:

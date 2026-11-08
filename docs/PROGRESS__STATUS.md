@@ -2981,3 +2981,19 @@ The diagnostics and reports log for `BFF_IMPLEMENTATION_PROGRESS.md`:
   as history.
 - **Not done here:** the GitHub repo rename, and fordona-engine's references to the old name
   (`CLAUDE.md`, comments in `V1_0_16`/`V1_0_18` migrations and `ErrorCode.java`).
+
+### 2026-11-08 · Owner-requested · Removed the Boost stub
+
+- **Status:** DONE (not a tracker task)
+- **Why:** a plain `docker build` (what a Dokploy Application runs) picked the Dockerfile's last
+  stage, `boost-stub`, so the staging service booted the stub instead of fordona-connect. The owner
+  chose to drop the stub altogether rather than pin the build stage.
+- **Removed:** `src/boost_stub/`, `stub-data/`, `scripts/` (the stub-data generator),
+  `tests/unit/boost_stub/` and the generator tests, the Dockerfile's `boost-stub` stage (`runtime`
+  is now the last stage, so an untargeted build produces it), the `boost-stub` service and
+  `BOOST_BASE_URL` override in `docker-compose.dokploy.yml`, and import-linter (its only contract
+  kept the stub and the BFF apart). `tests/integration/test_docker_stages.py` now builds with no
+  `--target`. The `tests/contract/boost_content_v1` suite stays: it runs against a deployed Boost.
+- **Consequence:** dev and staging point `BOOST_BASE_URL` at real Boost. The P2/§13 gaps recorded
+  above (change feed, batch routes, `question-templates`, `topics` missing from real Boost) are no
+  longer covered by anything locally.
