@@ -2,18 +2,17 @@
 explanations) into the §13 block format, for content the BFF reads directly from Boost
 or forwards from the engine.
 
-Ported from ``boost_stub.transforms`` (the stub's own reference implementation of this
-exact conversion, written against the same plan sections) because real Boost — unlike
-the stub — never sends block-format content: confirmed 2026-11-06 against a live
-boost-api-dev.fordona.dev response, every lesson/question/explanation comes back with
-only the legacy flat fields (``contentHtml``, ``questionText``, ``options[].text``, a
-plain-string/HTML ``explanation``), never ``blocks``/``prompt``/``options[].blocks``.
+Originally ported from the (since removed) Boost stub's reference implementation of
+this exact conversion, because real Boost never sends block-format content: confirmed
+2026-11-06 against a live boost-api-dev.fordona.dev response, every lesson, question
+and explanation comes back with only the legacy flat fields (``contentHtml``,
+``questionText``, ``options[].text``, a plain-string/HTML ``explanation``), never
+``blocks``/``prompt``/``options[].blocks``.
 Without this conversion, lesson theory, question prompts and "Check Answer" feedback
 all render empty (or, for explanation, crash — see ``parse_explanation_blocks`` in
 ``theory_mappers.py``) against real content.
 
-Unlike the stub (which produces raw dicts consumed only by its own JSON responses),
-this module produces typed ``ContentBlock`` Pydantic instances, since every BFF
+This module produces typed ``ContentBlock`` Pydantic instances, since every BFF
 pipeline (``render_blocks``) expects those, not dicts.
 """
 

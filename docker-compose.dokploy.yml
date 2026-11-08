@@ -33,16 +33,11 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://connect:connect@postgres:5432/fordona_connect
       REDIS_URL: redis://redis:6379/0
-      BOOST_BASE_URL: http://boost-stub:8080
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       migrate: { condition: service_completed_successfully }
     networks: [default, dokploy-network]
-
-  boost-stub:
-    build: { context: ., target: boost-stub }
-    env_file: .env
 
 networks:
   dokploy-network:

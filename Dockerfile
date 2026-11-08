@@ -37,35 +37,3 @@ EXPOSE 8000
 # still migrate safely — it's a no-op once the DB is already current, so
 # running it on every container start (incl. every replica) is harmless.
 CMD ["sh", "-c", "alembic upgrade head && uvicorn fordona_connect.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --no-access-log"]
-
-# ---- boost-stub ---------------------------------------------------------------
-# The Boost stub (plan §4.5): a separate deployable, dev and staging only. It
-# shares the `build` stage's dependencies (a superset of what it needs) but is
-# run from source, not installed as a package: `boost_stub` is deliberately
-# excluded from this project's wheel (see [tool.hatch.build.targets.wheel]), so
-# `src/boost_stub` is copied in here and nowhere else — in particular, never
-# into the `runtime` stage above. Build with `docker build --target boost-stub`.
-FROM python:3.12-slim AS boost-stub
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PATH="/app/.venv/bin:$PATH" \
-    PYTHONPATH="/app/src" \
-    PORT=8080 \
-    STUB_SQLITE_PATH=/app/data/stub-changes.sqlite3
-RUN groupadd --system app && useradd --system --gid app --home /app app
-WORKDIR /app
-
-COPY --from=build --chown=app:app /app/.venv /app/.venv
-COPY --chown=app:app src/boost_stub ./src/boost_stub
-# StubSettings.stub_data_dir resolves to /app/stub-data (three parents up from
-# config.py) — without this, container.py's startup `load(settings.stub_data_dir)`
-# fails on a missing directory and the stub never boots.
-COPY --chown=app:app stub-data ./stub-data
-# The change tracker's SQLite file needs a writable directory; /app itself is
-# root-owned (created by WORKDIR before USER app takes effect below).
-RUN mkdir -p /app/data && chown app:app /app/data
-
-USER app
-EXPOSE 8080
-
-CMD ["sh", "-c", "uvicorn boost_stub.main:app --host 0.0.0.0 --port ${PORT} --proxy-headers --forwarded-allow-ips='*' --no-access-log"]
