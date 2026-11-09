@@ -85,13 +85,22 @@ Each phase ends green (pytest, ruff, mypy) and is committed on its own.
   (timezone-aware streaks, daily activity, best accuracy), home, learning path (+ ETag), readiness,
   completion `next`/`progress` (computed after the completion commits), mock exam catalogue.
   The learner's name comes through `ProfileSource` (engine-backed in L6).
-- [ ] **L5 Mock exams and learning journeys**: mock exam flow on the shared attempt model;
-  journeys (assignment, per-challenge progress, remediation) on the same foundation, replacing the
-  mock Learning Journey module and its seed.
-- [ ] **L6 Platform client**: engine GETs for learner context and entitlement (replacing the
-  current engine client calls), event pull loop with cursor.
-- [ ] **L7 Switch the public routes** to the local services; remove the old engine theory client
-  calls; admin endpoints (sync now, content report, retry policy).
+- [x] **L5 Mock exams and learning journeys** (2026-11-09): mock exam catalogue (L4). The 11
+  journey endpoints now read content from Boost (`learning_journey/boost_content.py`: structure from
+  the synced journey tables, answer keys from the snapshot, question text/options from the body
+  cache) through `JourneyContentSource`. The mock seed and its seven tables are gone (migration
+  0002 is now a no-op, 0003 lost its content foreign keys); the seed JSON survives only as a test
+  fixture. The free tier is the journey's first milestone; the journey is the first published one.
+- [x] **L6 Platform client** (2026-11-09): `learning/platform.py`. `PlatformClient` reads
+  `GET /internal/learning/v1/learners/{kindeSubject}` (internal token only), caches it in Redis,
+  fails closed. `PlatformEventConsumer` pulls `GET /internal/learning/v1/events?after=` with the
+  cursor in `platform_event_cursor` (migration 0007), behind an advisory lock;
+  `subscription.changed`/`user.updated` clear the cache, `user.deleted` deletes learning data.
+- [x] **L7 Switch the public routes** (2026-11-09): `THEORY_BACKEND=local` (default) serves the
+  theory routes from `learning/backend.py`, a drop-in for the engine theory client; `engine` keeps
+  the legacy path for the mapping tests and a rollback. Journeys use Boost content and the
+  platform client. **Not yet ported**: the engine's admin endpoints (manual sync trigger, content
+  report, retry-policy edits); the sync runs on its timer and policies are rows in `retry_policy`.
 - [ ] **L8 Engine side** (fordona-engine, own branch): learner-context + entitlement endpoint,
   outbox + `/internal/events`; then delete `learn/theory`, `learn/platform` theory admin, and the
   sync job.

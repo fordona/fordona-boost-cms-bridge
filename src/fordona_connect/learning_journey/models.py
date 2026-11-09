@@ -1,10 +1,9 @@
-"""ORM tables for the Learning Journey mock (see package docstring).
+"""ORM tables for learning-journey learner state.
 
-All tables are prefixed ``learning_journey_`` so the whole feature's footprint is
-grep-able and removable as a unit. Content tables (journey/milestone/challenge/
-question + their membership join tables) are seeded once by migration 0002 and never
-written to at runtime. Per-user and dynamic-state tables are created empty by
-migration 0003 and are the actual point of this feature.
+Journey content (milestones, challenges, quizzes) is authored in Boost and read
+through ``content.JourneyContentSource``; these tables hold only per-learner state.
+Content ids here are Boost's own and carry no foreign key: Boost may retire a
+challenge while a learner's history still refers to it.
 """
 
 from datetime import datetime
@@ -25,120 +24,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from fordona_connect.db.models import Base
 
-# --- Content (seeded once) --------------------------------------------------
-
-
-class LearningJourneyTemplate(Base):
-    __tablename__ = "learning_journey_templates"
-
-    journey_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    version: Mapped[int] = mapped_column(Integer, nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
-    stats: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-
-
-class LearningJourneyMilestone(Base):
-    __tablename__ = "learning_journey_milestones"
-
-    milestone_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    journey_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_templates.journey_id"), nullable=False
-    )
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
-    challenge_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    question_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    difficulty_distribution: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-
-
-class LearningJourneyAssignmentMilestone(Base):
-    """Ships as its own table in the mock seed, redundant with the milestone's own
-    ``journey_id``/``position`` — kept for literal fidelity with the seed/spec."""
-
-    __tablename__ = "learning_journey_assignment_milestones"
-
-    journey_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_templates.journey_id"), primary_key=True
-    )
-    milestone_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_milestones.milestone_id"), primary_key=True
-    )
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-
-
-class LearningJourneyChallenge(Base):
-    __tablename__ = "learning_journey_challenges"
-
-    challenge_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    milestone_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_milestones.milestone_id"), nullable=False
-    )
-    journey_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_templates.journey_id"), nullable=False
-    )
-    version: Mapped[int] = mapped_column(Integer, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-    display_code: Mapped[str] = mapped_column(Text, nullable=False)
-    title: Mapped[str] = mapped_column(Text, nullable=False)
-    description: Mapped[str | None] = mapped_column(Text)
-    estimated_minutes: Mapped[int | None] = mapped_column(Integer)
-    topics: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
-    question_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    difficulty_distribution: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    content_readiness: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    source: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-
-
-class LearningJourneyMilestoneChallenge(Base):
-    __tablename__ = "learning_journey_milestone_challenges"
-
-    milestone_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_milestones.milestone_id"), primary_key=True
-    )
-    challenge_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_challenges.challenge_id"), primary_key=True
-    )
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-
-
-class LearningJourneyQuestion(Base):
-    __tablename__ = "learning_journey_questions"
-
-    question_id: Mapped[str] = mapped_column(Text, primary_key=True)
-    question_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    question_type: Mapped[str] = mapped_column(Text, nullable=False)
-    question_text: Mapped[str] = mapped_column(Text, nullable=False)
-    difficulty: Mapped[int] = mapped_column(Integer, nullable=False)
-    level: Mapped[str] = mapped_column(Text, nullable=False)
-    image_urls: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
-    has_image_reference: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    # Full option objects (option_id, text, image_urls, position) — the per-attempt
-    # delivered order/labels are computed at attempt-start time, never stored here.
-    options: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
-    # Never serialized into any learner-facing read endpoint response.
-    correct_answer: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    explanation: Mapped[str | None] = mapped_column(Text)
-    connected_chapters: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
-    cms_row_numbers: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
-    content_readiness: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-
-
-class LearningJourneyChallengeQuestionMembership(Base):
-    __tablename__ = "learning_journey_challenge_question_memberships"
-
-    challenge_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_challenges.challenge_id"), primary_key=True
-    )
-    challenge_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    question_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_questions.question_id"), primary_key=True
-    )
-    question_version: Mapped[int] = mapped_column(Integer, nullable=False)
-    position: Mapped[int] = mapped_column(Integer, nullable=False)
-
-
 # --- Per-user assignment/progress -------------------------------------------
 
 
@@ -147,9 +32,7 @@ class LearningJourneyUserAssignment(Base):
 
     assignment_id: Mapped[str] = mapped_column(Text, primary_key=True)
     app_user_id: Mapped[str] = mapped_column(Text, nullable=False)
-    journey_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_templates.journey_id"), nullable=False
-    )
+    journey_id: Mapped[str] = mapped_column(Text, nullable=False)
     journey_version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -164,9 +47,7 @@ class LearningJourneyUserChallengeProgress(Base):
     assignment_id: Mapped[str] = mapped_column(
         Text, ForeignKey("learning_journey_user_assignments.assignment_id"), primary_key=True
     )
-    challenge_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_challenges.challenge_id"), primary_key=True
-    )
+    challenge_id: Mapped[str] = mapped_column(Text, primary_key=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     is_progression_complete: Mapped[bool] = mapped_column(Boolean, nullable=False)
     total_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -188,9 +69,7 @@ class LearningJourneySession(Base):
         Text, ForeignKey("learning_journey_user_assignments.assignment_id"), nullable=False
     )
     app_user_id: Mapped[str] = mapped_column(Text, nullable=False)
-    challenge_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_challenges.challenge_id"), nullable=False
-    )
+    challenge_id: Mapped[str] = mapped_column(Text, nullable=False)
     session_type: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
     remediation_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -210,9 +89,7 @@ class LearningJourneyAttempt(Base):
         Text, ForeignKey("learning_journey_user_assignments.assignment_id"), nullable=False
     )
     app_user_id: Mapped[str] = mapped_column(Text, nullable=False)
-    challenge_id: Mapped[str] = mapped_column(
-        Text, ForeignKey("learning_journey_challenges.challenge_id"), nullable=False
-    )
+    challenge_id: Mapped[str] = mapped_column(Text, nullable=False)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     challenge_attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     attempt_type: Mapped[str] = mapped_column(Text, nullable=False)

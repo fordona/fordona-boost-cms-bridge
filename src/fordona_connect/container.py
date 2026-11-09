@@ -17,7 +17,16 @@ from fordona_connect.clients.engine.theory import EngineTheoryClient
 from fordona_connect.core.config import SUPPORTED_LOCALES, Settings
 from fordona_connect.core.security import JwksCache, TokenVerifier
 from fordona_connect.db.session import create_engine, create_sessionmaker, ping
+from fordona_connect.learning.attempts.service import AttemptService
+from fordona_connect.learning.backend import LocalTheoryBackend
+from fordona_connect.learning.content.snapshot import SnapshotProvider
 from fordona_connect.learning.content.sync import ContentSyncRunner, ContentSyncService
+from fordona_connect.learning.mock_exams import MockExamService
+from fordona_connect.learning.platform import PlatformClient, PlatformEventConsumer
+from fordona_connect.learning.progress.recorder import ProgressService
+from fordona_connect.learning.progress.screens import ProgressScreens
+from fordona_connect.learning.selection import Strategy
+from fordona_connect.learning_journey.boost_content import BoostJourneyContent
 from fordona_connect.learning_journey.repository import LearningJourneyRepository
 from fordona_connect.learning_journey.service import LearningJourneyService
 from fordona_connect.services.body_cache import BodyCache
@@ -72,13 +81,40 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
     boost_client = BoostClient.from_settings(boost_http, settings)
     sync_http = create_boost_http_client(settings, read_timeout=_SYNC_READ_TIMEOUT_SECONDS)
     raw_engine_client = EngineClient.from_settings(engine_http, settings)
-    engine_client = EngineTheoryClient(
-        raw_engine_client,
-        phase_complete_timeout=settings.engine_phase_complete_timeout,
-    )
     body_cache = BodyCache(boost_client, redis_cache, batch_max_refs=settings.boost_batch_max_refs)
     attempt_refs = AttemptRefCache(redis_cache)
     resolver = build_asset_url_resolver(settings)
+    db_sessionmaker = create_sessionmaker(db_engine)
+
+    # --- The learning service -------------------------------------------------
+    platform = PlatformClient(
+        raw_engine_client, redis, ttl_seconds=settings.platform_learner_cache_seconds
+    )
+    snapshots = SnapshotProvider(db_sessionmaker)
+    screens = ProgressScreens(
+        db_sessionmaker,
+        snapshots,
+        platform,
+        platform,
+        week_starts_on=settings.progress_week_starts_on,
+        daily_challenge_lessons=settings.progress_daily_challenge_lessons,
+    )
+    attempts = AttemptService(
+        db_sessionmaker,
+        snapshots,
+        platform,
+        strategy=Strategy(settings.theory_selection_strategy),
+        progress=ProgressService(db_sessionmaker),
+        summaries=screens,
+    )
+    backend: LocalTheoryBackend | EngineTheoryClient = (
+        LocalTheoryBackend(attempts, screens, MockExamService(db_sessionmaker, snapshots))
+        if settings.theory_backend == "local"
+        else EngineTheoryClient(
+            raw_engine_client, phase_complete_timeout=settings.engine_phase_complete_timeout
+        )
+    )
+
     prefetch_gate: ReleasePrefetchGate | None = None
     prefetch_runner: ReleasePrefetchRunner | None = None
     if settings.content_prefetch_on_release:
@@ -90,7 +126,7 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
             batch_delay_seconds=settings.content_prefetch_batch_delay_seconds,
         )
     theory = TheoryService(
-        engine_client,
+        backend,
         body_cache,
         attempt_refs,
         resolver,
@@ -102,9 +138,10 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
         read_limit_per_minute=settings.rate_limit_read_per_minute,
         write_limit_per_minute=settings.rate_limit_write_per_minute,
     )
-    db_sessionmaker = create_sessionmaker(db_engine)
     learning_journey = LearningJourneyService(
-        LearningJourneyRepository(db_sessionmaker), raw_engine_client
+        LearningJourneyRepository(db_sessionmaker),
+        BoostJourneyContent(db_sessionmaker, snapshots, body_cache, locale=settings.default_locale),
+        platform,
     )
 
     content_sync = ContentSyncService(
@@ -125,12 +162,24 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
         if settings.content_sync_interval_seconds > 0
         else None
     )
+    event_consumer = (
+        PlatformEventConsumer(
+            raw_engine_client,
+            db_sessionmaker,
+            platform,
+            interval_seconds=settings.platform_events_interval_seconds,
+        )
+        if settings.platform_events_interval_seconds > 0
+        else None
+    )
 
     async def check_database() -> None:
         await ping(db_engine)
 
     if sync_runner is not None:
         sync_runner.start()
+    if event_consumer is not None:
+        event_consumer.start()
     try:
         yield Services(
             verifier=verifier,
@@ -142,6 +191,8 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
     finally:
         if sync_runner is not None:
             await sync_runner.stop()
+        if event_consumer is not None:
+            await event_consumer.stop()
         await jwks_http.aclose()
         await sync_http.aclose()
         await boost_http.aclose()

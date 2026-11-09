@@ -16,6 +16,7 @@ make that split possible.
 """
 
 import asyncio
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from fordona_connect.cache.attempt_refs import AttemptRefCache
@@ -52,11 +53,14 @@ from fordona_connect.services.content_html import html_to_blocks
 from fordona_connect.services.media import AssetUrlResolver
 from fordona_connect.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 
+if TYPE_CHECKING:
+    from fordona_connect.learning.backend import LocalTheoryBackend
+
 
 class TheoryService:
     def __init__(
         self,
-        engine: EngineTheoryClient,
+        engine: "EngineTheoryClient | LocalTheoryBackend",
         body_cache: BodyCache,
         attempt_refs: AttemptRefCache,
         resolver: AssetUrlResolver,

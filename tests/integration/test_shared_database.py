@@ -16,7 +16,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from fordona_connect.db.connection import ASYNCPG_CONNECT_ARGS, DB_SCHEMA
-from fordona_connect.learning_journey.models import LearningJourneyTemplate
+from fordona_connect.learning_journey.models import LearningJourneyUserAssignment
 
 pytestmark = pytest.mark.integration
 
@@ -110,13 +110,6 @@ async def test_connect_tables_and_version_table_live_in_connect_learning_schema(
     assert "alembic_version" in tables
     assert "content_snapshot" in tables
     assert {t for t in tables if t.startswith("learning_journey_")} == {
-        "learning_journey_templates",
-        "learning_journey_milestones",
-        "learning_journey_assignment_milestones",
-        "learning_journey_challenges",
-        "learning_journey_milestone_challenges",
-        "learning_journey_questions",
-        "learning_journey_challenge_question_memberships",
         "learning_journey_user_assignments",
         "learning_journey_user_challenge_progress",
         "learning_journey_sessions",
@@ -127,10 +120,10 @@ async def test_connect_tables_and_version_table_live_in_connect_learning_schema(
     }
 
 
-async def test_orm_reads_seeded_content_from_connect_learning_schema(engine: AsyncEngine) -> None:
+async def test_orm_queries_resolve_to_the_connect_learning_schema(engine: AsyncEngine) -> None:
     async with engine.connect() as connection:
-        rows = (await connection.execute(select(LearningJourneyTemplate.journey_id))).all()
-    assert rows
+        rows = (await connection.execute(select(LearningJourneyUserAssignment.assignment_id))).all()
+    assert rows == []
 
 
 def test_rerunning_migrations_is_a_no_op(migrated_url: str) -> None:
@@ -153,4 +146,6 @@ def test_rerunning_migrations_is_a_no_op(migrated_url: str) -> None:
 async def test_repeated_queries_work_without_statement_cache(engine: AsyncEngine) -> None:
     async with engine.connect() as connection:
         for _ in range(5):
-            assert (await connection.execute(select(LearningJourneyTemplate.journey_id))).all()
+            assert (
+                await connection.execute(select(LearningJourneyUserAssignment.assignment_id))
+            ).all() == []

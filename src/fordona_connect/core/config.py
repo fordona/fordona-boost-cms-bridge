@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     content_page_size: int = Field(default=250, ge=1, le=1000)
 
     # --- Learning ------------------------------------------------------------
+    # Who serves the theory routes: this service's own learning modules ("local"), or
+    # fordona-engine's legacy internal theory API ("engine", until it is removed).
+    theory_backend: Literal["local", "engine"] = "local"
     # Question selection for a lesson attempt: the lesson's whole active-question bank
     # ("lesson-bank-v1"), or the linked learning-journey challenge's quiz ("challenge-v1").
     theory_selection_strategy: Literal["lesson-bank-v1", "challenge-v1"] = "lesson-bank-v1"
@@ -103,6 +106,11 @@ class Settings(BaseSettings):
         "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
     ] = "SUNDAY"
     progress_daily_challenge_lessons: int = Field(default=3, ge=1)
+
+    # Seconds a learner's platform context (name, subscription) is cached.
+    platform_learner_cache_seconds: int = Field(default=60, ge=1)
+    # Seconds between pulls of fordona-engine's event outbox; 0 turns the consumer off.
+    platform_events_interval_seconds: float = Field(default=0, ge=0)
 
     # --- Locale ------------------------------------------------------------
     default_locale: str = "sv-SE"

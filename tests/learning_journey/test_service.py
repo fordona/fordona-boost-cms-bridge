@@ -28,7 +28,7 @@ from fordona_connect.learning_journey.errors import (
     ValidationError,
 )
 from fordona_connect.learning_journey.service import LearningJourneyService
-from tests.learning_journey.fakes import FakeEngineClient, FakeLearningJourneyRepository
+from tests.learning_journey.fakes import FakeLearningJourneyRepository, FakeSubscriptions
 
 USER = "kp_test_learner"
 CHALLENGE = "ch_028"  # ms_008 — a paid milestone; most tests assume an active subscription
@@ -43,15 +43,15 @@ def repo() -> FakeLearningJourneyRepository:
 
 
 @pytest.fixture
-def engine() -> FakeEngineClient:
-    return FakeEngineClient(subscribed=True)
+def engine() -> FakeSubscriptions:
+    return FakeSubscriptions(subscribed=True)
 
 
 @pytest.fixture
 def service(
-    repo: FakeLearningJourneyRepository, engine: FakeEngineClient
+    repo: FakeLearningJourneyRepository, engine: FakeSubscriptions
 ) -> LearningJourneyService:
-    return LearningJourneyService(repo, engine)  # type: ignore[arg-type]
+    return LearningJourneyService(repo, repo, engine)  # type: ignore[arg-type]
 
 
 def _key() -> str:
@@ -430,7 +430,7 @@ async def test_resume_preserves_the_originally_frozen_option_order(
 async def test_unsubscribed_user_can_view_the_free_milestone(
     repo: FakeLearningJourneyRepository,
 ) -> None:
-    service = LearningJourneyService(repo, FakeEngineClient(subscribed=False))
+    service = LearningJourneyService(repo, repo, FakeSubscriptions(subscribed=False))
 
     out = await service.get_challenge_detail(USER, FREE_CHALLENGE)
 
@@ -440,7 +440,7 @@ async def test_unsubscribed_user_can_view_the_free_milestone(
 async def test_unsubscribed_user_is_blocked_from_a_paid_challenge(
     repo: FakeLearningJourneyRepository,
 ) -> None:
-    service = LearningJourneyService(repo, FakeEngineClient(subscribed=False))
+    service = LearningJourneyService(repo, repo, FakeSubscriptions(subscribed=False))
 
     with pytest.raises(SubscriptionRequiredError):
         await service.get_challenge_detail(USER, CHALLENGE)
@@ -449,7 +449,7 @@ async def test_unsubscribed_user_is_blocked_from_a_paid_challenge(
 async def test_unsubscribed_user_cannot_start_a_paid_attempt(
     repo: FakeLearningJourneyRepository,
 ) -> None:
-    service = LearningJourneyService(repo, FakeEngineClient(subscribed=False))
+    service = LearningJourneyService(repo, repo, FakeSubscriptions(subscribed=False))
 
     with pytest.raises(SubscriptionRequiredError):
         await service.start_attempt(
@@ -463,12 +463,12 @@ async def test_unsubscribed_user_cannot_start_a_paid_attempt(
 
 async def test_engine_failure_fails_closed_not_open(repo: FakeLearningJourneyRepository) -> None:
     class BrokenEngineClient:
-        async def get(self, path: str, **kwargs: object) -> None:
+        async def is_subscribed(self, learner_id: str) -> bool:
             from fordona_connect.core.errors import UpstreamUnavailableError
 
             raise UpstreamUnavailableError()
 
-    service = LearningJourneyService(repo, BrokenEngineClient())  # type: ignore[arg-type]
+    service = LearningJourneyService(repo, repo, BrokenEngineClient())  # type: ignore[arg-type]
 
     with pytest.raises(SubscriptionRequiredError):
         await service.get_challenge_detail(USER, CHALLENGE)
@@ -477,7 +477,7 @@ async def test_engine_failure_fails_closed_not_open(repo: FakeLearningJourneyRep
 async def test_learning_journey_listing_marks_paid_milestones_locked_for_free_user(
     repo: FakeLearningJourneyRepository,
 ) -> None:
-    service = LearningJourneyService(repo, FakeEngineClient(subscribed=False))
+    service = LearningJourneyService(repo, repo, FakeSubscriptions(subscribed=False))
 
     out = await service.get_learning_journey(USER)
 
@@ -491,7 +491,7 @@ async def test_learning_journey_listing_marks_paid_milestones_locked_for_free_us
 async def test_subscribed_user_sees_every_milestone_unlocked_by_entitlement(
     repo: FakeLearningJourneyRepository,
 ) -> None:
-    service = LearningJourneyService(repo, FakeEngineClient(subscribed=True))
+    service = LearningJourneyService(repo, repo, FakeSubscriptions(subscribed=True))
 
     out = await service.get_learning_journey(USER)
 
@@ -526,7 +526,7 @@ async def test_challenge_detail_exposes_content_ready_for_a_ready_challenge(
 async def test_challenge_detail_exposes_content_ready_false_for_missing_media(
     repo: FakeLearningJourneyRepository,
 ) -> None:
-    service = LearningJourneyService(repo, FakeEngineClient(subscribed=True))
+    service = LearningJourneyService(repo, repo, FakeSubscriptions(subscribed=True))
 
     out = await service.get_challenge_detail(USER, FREE_CHALLENGE)
 
@@ -540,9 +540,9 @@ _FIXED_SUNDAY = datetime(2026, 11, 8, 12, 0, tzinfo=UTC)
 
 @pytest.fixture
 def home_service(
-    repo: FakeLearningJourneyRepository, engine: FakeEngineClient
+    repo: FakeLearningJourneyRepository, engine: FakeSubscriptions
 ) -> LearningJourneyService:
-    return LearningJourneyService(repo, engine, now_fn=lambda: _FIXED_SUNDAY)  # type: ignore[arg-type]
+    return LearningJourneyService(repo, repo, engine, now_fn=lambda: _FIXED_SUNDAY)  # type: ignore[arg-type]
 
 
 async def test_readiness_with_no_activity_is_zero(

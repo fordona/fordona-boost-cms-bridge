@@ -25,7 +25,6 @@ def upgrade() -> None:
         sa.Column(
             "journey_id",
             sa.Text(),
-            sa.ForeignKey("learning_journey_templates.journey_id"),
             nullable=False,
         ),
         sa.Column("journey_version", sa.Integer(), nullable=False),
@@ -46,7 +45,6 @@ def upgrade() -> None:
         sa.Column(
             "challenge_id",
             sa.Text(),
-            sa.ForeignKey("learning_journey_challenges.challenge_id"),
             primary_key=True,
         ),
         sa.Column("status", sa.Text(), nullable=False),
@@ -72,7 +70,6 @@ def upgrade() -> None:
         sa.Column(
             "challenge_id",
             sa.Text(),
-            sa.ForeignKey("learning_journey_challenges.challenge_id"),
             nullable=False,
         ),
         sa.Column("session_type", sa.Text(), nullable=False),
@@ -102,7 +99,6 @@ def upgrade() -> None:
         sa.Column(
             "challenge_id",
             sa.Text(),
-            sa.ForeignKey("learning_journey_challenges.challenge_id"),
             nullable=False,
         ),
         sa.Column("attempt_number", sa.Integer(), nullable=False),

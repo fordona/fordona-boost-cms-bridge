@@ -11,16 +11,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from fordona_connect.db.session import create_sessionmaker
 from fordona_connect.learning_journey.models import (
     LearningJourneyAttempt,
     LearningJourneyAttemptQuestion,
-    LearningJourneyChallenge,
-    LearningJourneyMilestone,
-    LearningJourneyQuestion,
     LearningJourneySession,
 )
 from fordona_connect.learning_journey.repository import LearningJourneyRepository
@@ -81,43 +77,6 @@ def repository(engine: AsyncEngine) -> LearningJourneyRepository:
     return LearningJourneyRepository(create_sessionmaker(engine))
 
 
-# --- Seed landed correctly -------------------------------------------------------
-
-
-async def test_seed_counts_match_the_bundled_diagnostics(engine: AsyncEngine) -> None:
-    import json
-
-    diagnostics = json.loads(
-        (
-            ROOT
-            / "src"
-            / "fordona_connect"
-            / "learning_journey"
-            / "seed"
-            / "learning_journey_mock_db.json"
-        ).read_text(encoding="utf-8")
-    )["diagnostics"]
-
-    async with create_sessionmaker(engine)() as session:
-        milestone_count = (await session.execute(select(LearningJourneyMilestone))).scalars().all()
-        challenge_count = (await session.execute(select(LearningJourneyChallenge))).scalars().all()
-        question_count = (await session.execute(select(LearningJourneyQuestion))).scalars().all()
-
-    assert len(milestone_count) == diagnostics["milestone_count"]
-    assert len(challenge_count) == diagnostics["challenge_count"]
-    assert len(question_count) == diagnostics["question_count"]
-
-
-async def test_a_ready_challenge_is_queryable_with_its_questions_in_order(
-    repository: LearningJourneyRepository,
-) -> None:
-    questions = await repository.list_questions_for_challenge("ch_028")
-
-    assert len(questions) == 12
-    positions = [position for _, position in questions]
-    assert positions == sorted(positions)
-
-
 # --- Assignment bootstrap ---------------------------------------------------------
 
 
@@ -125,9 +84,7 @@ async def test_ensure_assignment_is_idempotent_under_repeated_calls(
     repository: LearningJourneyRepository,
 ) -> None:
     now = datetime.now(UTC)
-    challenge_ids = [
-        c.challenge_id for c in await repository.list_challenges_for_milestone("ms_008")
-    ]
+    challenge_ids = ["c1", "c2", "c3"]
 
     first = await repository.ensure_assignment(
         app_user_id="user-1",
@@ -158,9 +115,7 @@ async def test_create_attempt_then_get_attempt_and_grade_round_trips(
     repository: LearningJourneyRepository,
 ) -> None:
     now = datetime.now(UTC)
-    challenge_ids = [
-        c.challenge_id for c in await repository.list_challenges_for_milestone("ms_008")
-    ]
+    challenge_ids = ["c1", "c2", "c3"]
     assignment = await repository.ensure_assignment(
         app_user_id="user-2",
         journey_id="journey_001",

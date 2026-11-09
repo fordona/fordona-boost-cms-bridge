@@ -41,6 +41,10 @@ class BoostWorld:
     grading_calls: list[str] = field(default_factory=list)
 
     def mount(self, router: respx.MockRouter) -> None:
+        router.get(url__regex=rf"{BASE}/v1/delivery/lessons/[^/]+$").mock(side_effect=self._lesson)
+        router.get(url__regex=rf"{BASE}/v1/delivery/questions/[^/]+/revisions/[^/]+$").mock(
+            side_effect=self._question_revision
+        )
         router.get(f"{BASE}/v1/delivery/modules").mock(side_effect=self._modules)
         router.get(f"{BASE}/v1/delivery/lessons").mock(side_effect=self._lessons)
         router.get(f"{BASE}/v1/delivery/questions").mock(side_effect=self._questions)
@@ -73,6 +77,41 @@ class BoostWorld:
             for lesson in self.lessons
         ]
         return _page(request, items)
+
+    def _lesson(self, request: httpx.Request) -> httpx.Response:
+        locale = request.url.params["locale"]
+        lesson_id = request.url.path.rsplit("/", 1)[-1]
+        lesson = next((item for item in self.lessons if item.id == lesson_id), None)
+        if lesson is None:
+            return httpx.Response(404, json={"status": 404})
+        return httpx.Response(
+            200,
+            json={
+                "id": lesson.id,
+                "version": lesson.version,
+                "shared": {"moduleId": lesson.module_id, "estimatedReadMinutes": 5},
+                "translation": {"title": f"{lesson.id} {locale}", "contentHtml": "<p>theory</p>"},
+            },
+        )
+
+    def _question_revision(self, request: httpx.Request) -> httpx.Response:
+        locale = request.url.params["locale"]
+        _, _, _, question_id, _, version = request.url.path.strip("/").split("/")
+        q = next((q for q in self.questions if q.id == question_id and q.version == version), None)
+        if q is None:
+            return httpx.Response(404, json={"status": 404})
+        return httpx.Response(
+            200,
+            json={
+                "id": q.id,
+                "version": q.version,
+                "shared": {"lessonId": q.lesson_id, "moduleId": q.module_id, "type": "mcq"},
+                "translation": {
+                    "questionText": f"{q.id}? ({locale})",
+                    "options": [{"id": key, "text": f"option {key}"} for key in q.options],
+                },
+            },
+        )
 
     def _questions(self, request: httpx.Request) -> httpx.Response:
         locale = request.url.params["locale"]
