@@ -1,8 +1,9 @@
 """Async client for the Boost **delivery** API.
 
-Only the delivery surface is used. It serves published content with answers
-stripped out. Editorial routes return drafts and answers, and grading routes
-need a separate credential (see design doc §2).
+Two surfaces are used. **Delivery** serves published content with answers
+stripped out. **Grading** (``/v1/grading/...``) returns a revision's answer key
+and needs its own credential; only the content sync calls it. Editorial routes
+are never used.
 
 A call is described by a ``BoostRequest[T]`` (path, params, locale, response
 model). ``fetch_raw`` executes it and returns validated JSON. The cache stores
@@ -14,7 +15,7 @@ import asyncio
 import random
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import ValidationError
@@ -26,8 +27,12 @@ from fordona_connect.clients.boost.errors import (
     BoostTimeout,
     BoostUnavailable,
 )
+from fordona_connect.clients.boost.grading import BoostGradingRevision
 from fordona_connect.clients.boost.models import (
+    BoostItems,
+    BoostLearningJourney,
     BoostLesson,
+    BoostMockExam,
     BoostModel,
     BoostModule,
     BoostPage,
@@ -59,8 +64,12 @@ class BoostRequest[T: BoostModel]:
     locale: str
     model: type[T]
     params: tuple[tuple[str, str], ...] = field(default=())
+    # Which Boost credential the call needs.
+    credential: Literal["delivery", "grading"] = "delivery"
 
     def query(self) -> list[tuple[str, str | int | float | bool | None]]:
+        if not self.locale:
+            return list(self.params)
         return [("locale", self.locale), *self.params]
 
     def parse(self, payload: Any) -> T:
@@ -182,15 +191,51 @@ class BoostRequests:
             model=BoostQuestion,
         )
 
+    @staticmethod
+    def mock_exams(locale: str) -> BoostRequest[BoostItems[BoostMockExam]]:
+        return BoostRequest(
+            resource="mock_exam_list",
+            path="/v1/delivery/mock-exams",
+            locale=locale,
+            model=BoostItems[BoostMockExam],
+        )
 
-def create_http_client(settings: Settings) -> httpx.AsyncClient:
-    """The one pooled client the process uses for Boost. Closed in the lifespan."""
+    @staticmethod
+    def learning_journeys(locale: str) -> BoostRequest[BoostItems[BoostLearningJourney]]:
+        return BoostRequest(
+            resource="learning_journey_list",
+            path="/v1/delivery/learning-journeys",
+            locale=locale,
+            model=BoostItems[BoostLearningJourney],
+        )
+
+    @staticmethod
+    def grading_revision(question_id: str, version: str) -> BoostRequest[BoostGradingRevision]:
+        """The answer key and explanations (every locale) of one immutable revision."""
+        return BoostRequest(
+            resource="grading_revision",
+            path=f"/v1/grading/questions/{question_id}/revisions/{version}",
+            locale="",
+            model=BoostGradingRevision,
+            credential="grading",
+        )
+
+
+def create_http_client(
+    settings: Settings, *, read_timeout: float | None = None
+) -> httpx.AsyncClient:
+    """A pooled Boost client, closed in the lifespan.
+
+    Request handling uses the tight plan timeouts; the background content sync
+    passes a longer ``read_timeout`` for its large list pages.
+    """
+    read = read_timeout if read_timeout is not None else settings.boost_read_timeout
     return httpx.AsyncClient(
         base_url=str(settings.boost_base_url).rstrip("/"),
         timeout=httpx.Timeout(
             connect=settings.boost_connect_timeout,
-            read=settings.boost_read_timeout,
-            write=settings.boost_read_timeout,
+            read=read,
+            write=read,
             pool=settings.boost_connect_timeout,
         ),
         limits=httpx.Limits(
@@ -210,6 +255,7 @@ class BoostClient:
         http: httpx.AsyncClient,
         *,
         token: str | None = None,
+        grading_token: str | None = None,
         max_retries: int = 2,
         total_budget: float = 8.0,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -218,6 +264,7 @@ class BoostClient:
         self._http = http
         # A service token, or None to forward the caller's learner token.
         self._service_token = token
+        self._grading_token = grading_token
         self._max_retries = max_retries
         self._total_budget = total_budget
         self._sleep = sleep
@@ -233,6 +280,7 @@ class BoostClient:
         return cls(
             http,
             token=service_token,
+            grading_token=settings.boost_grading_token.get_secret_value() or None,
             max_retries=settings.boost_max_retries,
             total_budget=settings.boost_total_budget,
         )
@@ -311,6 +359,11 @@ class BoostClient:
             attempt += 1
 
     def _credential(self, request: BoostRequest[Any]) -> str:
+        if request.credential == "grading":
+            if not self._grading_token:
+                log.error("boost_no_grading_credential", path=request.path)
+                raise BoostMisconfigured("BOOST_GRADING_TOKEN is not configured")
+            return self._grading_token
         if self._service_token:
             return self._service_token
         learner_token = learner_token_var.get()

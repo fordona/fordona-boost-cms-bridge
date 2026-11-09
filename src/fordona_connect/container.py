@@ -14,9 +14,10 @@ from fordona_connect.clients.boost.client import create_http_client as create_bo
 from fordona_connect.clients.engine.client import EngineClient
 from fordona_connect.clients.engine.client import create_http_client as create_engine_http_client
 from fordona_connect.clients.engine.theory import EngineTheoryClient
-from fordona_connect.core.config import Settings
+from fordona_connect.core.config import SUPPORTED_LOCALES, Settings
 from fordona_connect.core.security import JwksCache, TokenVerifier
 from fordona_connect.db.session import create_engine, create_sessionmaker, ping
+from fordona_connect.learning.content.sync import ContentSyncRunner, ContentSyncService
 from fordona_connect.learning_journey.repository import LearningJourneyRepository
 from fordona_connect.learning_journey.service import LearningJourneyService
 from fordona_connect.services.body_cache import BodyCache
@@ -25,6 +26,11 @@ from fordona_connect.services.release_prefetch import ReleasePrefetchGate, Relea
 from fordona_connect.services.theory_service import TheoryService
 
 ReadinessCheck = Callable[[], Awaitable[None]]
+
+# The background content sync lists whole catalogues: generous limits per call,
+# unlike request handling, which uses the tight plan timeouts.
+_SYNC_READ_TIMEOUT_SECONDS = 20.0
+_SYNC_CALL_BUDGET_SECONDS = 60.0
 
 
 @dataclass(slots=True)
@@ -64,6 +70,7 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
     )
 
     boost_client = BoostClient.from_settings(boost_http, settings)
+    sync_http = create_boost_http_client(settings, read_timeout=_SYNC_READ_TIMEOUT_SECONDS)
     raw_engine_client = EngineClient.from_settings(engine_http, settings)
     engine_client = EngineTheoryClient(
         raw_engine_client,
@@ -100,9 +107,30 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
         LearningJourneyRepository(db_sessionmaker), raw_engine_client
     )
 
+    content_sync = ContentSyncService(
+        db_sessionmaker,
+        BoostClient(
+            sync_http,
+            token=settings.boost_delivery_token.get_secret_value() or None,
+            grading_token=settings.boost_grading_token.get_secret_value() or None,
+            max_retries=settings.boost_max_retries,
+            total_budget=_SYNC_CALL_BUDGET_SECONDS,
+        ),
+        locales=SUPPORTED_LOCALES,
+        default_locale=SUPPORTED_LOCALES[0],
+        page_size=settings.content_page_size,
+    )
+    sync_runner = (
+        ContentSyncRunner(content_sync, settings.content_sync_interval_seconds)
+        if settings.content_sync_interval_seconds > 0
+        else None
+    )
+
     async def check_database() -> None:
         await ping(db_engine)
 
+    if sync_runner is not None:
+        sync_runner.start()
     try:
         yield Services(
             verifier=verifier,
@@ -112,7 +140,10 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
             readiness_checks={"database": check_database, "redis": redis_cache.ping},
         )
     finally:
+        if sync_runner is not None:
+            await sync_runner.stop()
         await jwks_http.aclose()
+        await sync_http.aclose()
         await boost_http.aclose()
         await engine_http.aclose()
         await redis.aclose()

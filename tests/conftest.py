@@ -104,6 +104,8 @@ def make_settings(**overrides: object) -> Settings:
         "engine_internal_token": "internal-secret",
         "media_cdn_base_url": MEDIA,
         "media_signing_key": "media-secret",
+        # The background content sync would call Boost on its own; tests run it explicitly.
+        "content_sync_interval_seconds": 0,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]

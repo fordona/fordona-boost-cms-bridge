@@ -164,3 +164,37 @@ def test_engine_token_secret_is_not_rendered() -> None:
 def test_media_free_unit_ids_split_as_csv() -> None:
     settings = _settings(**_AUTH, media_free_unit_ids="1, 2, 3")
     assert settings.media_free_unit_ids == ["1", "2", "3"]
+
+
+_OUTSIDE_LOCAL = {
+    **_AUTH,
+    "app_env": "staging",
+    "boost_delivery_token": "t",
+    "boost_auth_mode": "service_token",
+    "engine_internal_token": "t",
+    "media_signing_key": "t",
+    "content_sync_interval_seconds": 60,
+}
+
+
+def test_content_sync_needs_the_grading_token_outside_local() -> None:
+    with pytest.raises(ValidationError, match="BOOST_GRADING_TOKEN"):
+        _settings(**_OUTSIDE_LOCAL)
+
+
+def test_content_sync_needs_a_service_token_outside_local() -> None:
+    with pytest.raises(ValidationError, match="service_token"):
+        _settings(
+            **{**_OUTSIDE_LOCAL, "boost_auth_mode": "forward_learner_token"},
+            boost_grading_token="g",
+        )
+
+
+def test_content_sync_can_be_turned_off_without_a_grading_token() -> None:
+    settings = _settings(**{**_OUTSIDE_LOCAL, "content_sync_interval_seconds": 0})
+    assert settings.boost_grading_token.get_secret_value() == ""
+
+
+def test_grading_token_is_not_rendered() -> None:
+    settings = _settings(**_OUTSIDE_LOCAL, boost_grading_token="super-secret-grading")
+    assert "super-secret-grading" not in repr(settings)

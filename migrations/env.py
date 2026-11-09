@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from fordona_connect.db.connection import ASYNCPG_CONNECT_ARGS, DB_SCHEMA, normalize_database_url
 from fordona_connect.db.models import Base
+from fordona_connect.learning.content import models as _content_models  # noqa: F401 - registers tables
 
 config = context.config
 if config.config_file_name is not None:
