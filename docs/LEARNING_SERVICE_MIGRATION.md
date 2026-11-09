@@ -76,10 +76,15 @@ Each phase ends green (pytest, ruff, mypy) and is committed on its own.
   - Progress side effects go through `ProgressRecorder` (no-op until L4).
   - No templates (`TEMPLATE` item source and `fixed-v1` selector are gone with Boost's templates).
   - A correct answer in the retry phase resolves a mistake as `REPEAT` (the engine never got there).
-- [ ] **L3 Retry phase**: neighbour builder (metadata similarity), retry composer, retry policy
-  validation and admin edits, lesson and retry phase completion.
-- [ ] **L4 Progress and screens**: progress tables, streaks (timezone-aware), unlocks, home,
-  learning path (+ ETag), readiness, completion `next`/`progress`.
+- [x] **L3 Retry phase** (2026-11-09): metadata neighbours (top 20, rebuilt by the sync after
+  every release), retry composer (REPEAT + SIMILAR with the engine's six filters), lesson and retry
+  phase completion under an exclusive lock, idempotent on replay. `retry_enabled: false` now
+  completes the attempt directly (the engine ignored that key).
+- [x] **L4 Progress and screens** (2026-11-09): migration 0006 (`question_neighbour`,
+  `lesson_progress`, `learner_summary`, `learner_activity_day/lesson`), progress recorder
+  (timezone-aware streaks, daily activity, best accuracy), home, learning path (+ ETag), readiness,
+  completion `next`/`progress` (computed after the completion commits), mock exam catalogue.
+  The learner's name comes through `ProfileSource` (engine-backed in L6).
 - [ ] **L5 Mock exams and learning journeys**: mock exam flow on the shared attempt model;
   journeys (assignment, per-challenge progress, remediation) on the same foundation, replacing the
   mock Learning Journey module and its seed.

@@ -26,8 +26,13 @@ from fordona_connect.clients.engine.theory import (
     EngineAnswerFeedback,
     EngineAttempt,
     EngineAttemptItemRef,
+    EngineAttemptPhaseCompletion,
+    EngineCompletionNext,
+    EngineCompletionProgress,
     EngineLessonOpenAttemptRef,
     EngineLessonState,
+    EnginePhaseSummary,
+    EngineRetryPhase,
 )
 from fordona_connect.core.errors import ErrorCode
 from fordona_connect.core.logging import get_logger
@@ -45,11 +50,14 @@ from fordona_connect.learning.errors import (
     LessonNotFoundError,
     OptionInvalidError,
     PhaseClosedError,
+    PhaseIncompleteError,
     RequestIdConflictError,
     ResponseConflictError,
     TheoryLessonLockedError,
     TheoryModuleLockedError,
 )
+from fordona_connect.learning.retry.composer import LessonItem, compose_retry
+from fordona_connect.learning.retry.policy import RetryPolicy
 from fordona_connect.learning.selection import Selection, Strategy, select_questions
 from fordona_connect.learning.unlock import UnlockStatus, unlock_status
 
@@ -63,7 +71,7 @@ _RANDOM = secrets.SystemRandom()
 
 
 class ProgressRecorder(Protocol):
-    """Progress side effects of attempts. Phase L4 provides the real one."""
+    """Progress side effects of attempts (``progress.recorder.ProgressService``)."""
 
     async def attempt_started(
         self,
@@ -76,9 +84,37 @@ class ProgressRecorder(Protocol):
         started_at: datetime,
     ) -> None: ...
 
+    async def lesson_completed(
+        self,
+        session: AsyncSession,
+        *,
+        learner_id: str,
+        lesson_id: str,
+        unit_id: str,
+        correct: int,
+        total: int,
+        timezone: str | None,
+        now: datetime,
+    ) -> None: ...
+
+
+class CompletionSummaries(Protocol):
+    """The ``next``/``progress`` blocks of a completed attempt (``progress.screens``)."""
+
+    async def completion_next(
+        self, learner_id: str, *, locale: str
+    ) -> EngineCompletionNext | None: ...
+
+    async def completion_progress(
+        self, learner_id: str, *, locale: str, timezone: str | None
+    ) -> EngineCompletionProgress: ...
+
 
 class NoProgress:
     async def attempt_started(self, **_: Any) -> None:
+        return None
+
+    async def lesson_completed(self, session: AsyncSession, **_: Any) -> None:
         return None
 
 
@@ -101,6 +137,7 @@ class AttemptService:
         *,
         strategy: Strategy = Strategy.LESSON_BANK,
         progress: ProgressRecorder | None = None,
+        summaries: CompletionSummaries | None = None,
         now: Callable[[], datetime] = _utc_now,
         shuffle: Callable[[Sequence[str]], list[str]] = _shuffle,
     ) -> None:
@@ -108,7 +145,8 @@ class AttemptService:
         self._snapshots = snapshots
         self._subscriptions = subscriptions
         self._strategy = strategy
-        self._progress = progress or NoProgress()
+        self._progress: ProgressRecorder = progress or NoProgress()
+        self._summaries = summaries
         self._now = now
         self._shuffle = shuffle
 
@@ -324,6 +362,240 @@ class AttemptService:
             await session.refresh(item)
             return _feedback(item, revision.correct_option_key, revision.explanation, locale)
 
+    # --- phase completion ---------------------------------------------------
+
+    async def complete_lesson_phase(
+        self,
+        learner_id: str,
+        attempt_id: uuid.UUID,
+        *,
+        locale: str,
+        timezone: str | None,
+    ) -> EngineAttemptPhaseCompletion:
+        result = await self._complete_lesson_phase(
+            learner_id, attempt_id, locale=locale, timezone=timezone
+        )
+        return await self._with_summaries(result, learner_id, locale, timezone)
+
+    async def complete_retry_phase(
+        self,
+        learner_id: str,
+        attempt_id: uuid.UUID,
+        *,
+        locale: str,
+        timezone: str | None,
+    ) -> EngineAttemptPhaseCompletion:
+        result = await self._complete_retry_phase(
+            learner_id, attempt_id, locale=locale, timezone=timezone
+        )
+        return await self._with_summaries(result, learner_id, locale, timezone)
+
+    async def _with_summaries(
+        self,
+        result: EngineAttemptPhaseCompletion,
+        learner_id: str,
+        locale: str,
+        timezone: str | None,
+    ) -> EngineAttemptPhaseCompletion:
+        """Add ``next``/``progress`` to a completed attempt, after its transaction committed.
+
+        Recomputed on every call, replays included: other activity may have happened since.
+        """
+        if result.status != "COMPLETED" or self._summaries is None:
+            return result
+        return result.model_copy(
+            update={
+                "next": await self._summaries.completion_next(learner_id, locale=locale),
+                "progress": await self._summaries.completion_progress(
+                    learner_id, locale=locale, timezone=timezone
+                ),
+            }
+        )
+
+    async def _complete_lesson_phase(
+        self,
+        learner_id: str,
+        attempt_id: uuid.UUID,
+        *,
+        locale: str,
+        timezone: str | None,
+    ) -> EngineAttemptPhaseCompletion:
+        """All lesson items answered: complete (no mistakes) or compose the retry phase.
+
+        An exclusive lock serialises two devices completing at once and keeps a late
+        answer (which holds a shared lock) from landing after the totals are counted.
+        Completing again returns the stored result.
+        """
+        snapshot = await self._snapshots.get()
+        async with self._sessionmaker() as session, session.begin():
+            attempt = await self._locked_attempt(session, learner_id, attempt_id)
+            if attempt.status != "IN_LESSON":
+                return await self._completion(session, attempt, locale, timezone)
+
+            items = [i for i in await store.items_of(session, attempt_id) if i.phase == "LESSON"]
+            if any(item.answered_at is None for item in items):
+                raise PhaseIncompleteError("Lesson phase has unanswered items")
+            total = len(items)
+            correct = sum(1 for item in items if item.is_correct)
+            wrong = total - correct
+            now = self._now()
+            policy = RetryPolicy.from_json(attempt.policy_snapshot)
+
+            if wrong == 0 or not policy.retry_enabled:
+                await store.update_attempt(
+                    session,
+                    attempt_id,
+                    lesson_total=total,
+                    lesson_correct=correct,
+                    lesson_wrong=wrong,
+                    status="COMPLETED",
+                    completed_at=now,
+                )
+                await self._progress.lesson_completed(
+                    session,
+                    learner_id=learner_id,
+                    lesson_id=attempt.lesson_id,
+                    unit_id=attempt.unit_id,
+                    correct=correct,
+                    total=total,
+                    timezone=timezone,
+                    now=now,
+                )
+            else:
+                entitlement = await self._entitlement(snapshot, learner_id)
+                composition = compose_retry(
+                    snapshot,
+                    [
+                        LessonItem(
+                            seq=item.seq,
+                            question_id=item.question_id,
+                            version=item.version,
+                            is_correct=item.is_correct,
+                            option_order=list(item.option_order),
+                            domain_code=item.domain_code,
+                            topic_tag=item.topic_tag,
+                            difficulty=item.difficulty,
+                            level=item.level,
+                        )
+                        for item in items
+                    ],
+                    lesson_id=attempt.lesson_id,
+                    completed_lesson_ids=await store.completed_lesson_ids(session, learner_id),
+                    seen_question_ids=await store.seen_question_ids(session, learner_id),
+                    unit_entitled=entitlement.unit_entitled,
+                    policy=policy,
+                    seed=_attempt_seed(attempt_id),
+                )
+                retry_items = [
+                    {**item, "attempt_id": attempt_id, "learner_id": learner_id, "seq": seq}
+                    for seq, item in enumerate(composition.items, start=total + 1)
+                ]
+                await store.update_attempt(
+                    session,
+                    attempt_id,
+                    lesson_total=total,
+                    lesson_correct=correct,
+                    lesson_wrong=wrong,
+                    status="IN_RETRY",
+                    retry_extras_short=composition.extras_short,
+                )
+                await store.insert_items(session, retry_items)
+                log.info(
+                    "lesson_phase_completed",
+                    attempt_id=str(attempt_id),
+                    wrong=wrong,
+                    retry_items=len(retry_items),
+                    extras_short=composition.extras_short,
+                )
+            await session.refresh(attempt)
+            return await self._completion(session, attempt, locale, timezone)
+
+    async def _complete_retry_phase(
+        self,
+        learner_id: str,
+        attempt_id: uuid.UUID,
+        *,
+        locale: str,
+        timezone: str | None,
+    ) -> EngineAttemptPhaseCompletion:
+        async with self._sessionmaker() as session, session.begin():
+            attempt = await self._locked_attempt(session, learner_id, attempt_id)
+            if attempt.status == "COMPLETED":
+                return await self._completion(session, attempt, locale, timezone)
+            if attempt.status != "IN_RETRY":
+                raise PhaseClosedError("Attempt is not in the retry phase")
+            items = [i for i in await store.items_of(session, attempt_id) if i.phase == "RETRY"]
+            if any(item.answered_at is None for item in items):
+                raise PhaseIncompleteError("Retry phase has unanswered items")
+            total = len(items)
+            correct = sum(1 for item in items if item.is_correct)
+            now = self._now()
+            await store.update_attempt(
+                session,
+                attempt_id,
+                retry_total=total,
+                retry_correct=correct,
+                retry_wrong=total - correct,
+                status="COMPLETED",
+                completed_at=now,
+            )
+            # Readiness uses the lesson phase's result, not the retry phase's.
+            await self._progress.lesson_completed(
+                session,
+                learner_id=learner_id,
+                lesson_id=attempt.lesson_id,
+                unit_id=attempt.unit_id,
+                correct=attempt.lesson_correct,
+                total=attempt.lesson_total,
+                timezone=timezone,
+                now=now,
+            )
+            await session.refresh(attempt)
+            return await self._completion(session, attempt, locale, timezone)
+
+    async def _locked_attempt(
+        self, session: AsyncSession, learner_id: str, attempt_id: uuid.UUID
+    ) -> LessonAttempt:
+        attempt = await store.get_attempt(session, attempt_id, lock="update")
+        if attempt is None or attempt.learner_id != learner_id:
+            raise AttemptNotFoundError(f"Attempt not found: {attempt_id}")
+        return attempt
+
+    async def _completion(
+        self,
+        session: AsyncSession,
+        attempt: LessonAttempt,
+        locale: str,
+        timezone: str | None,
+    ) -> EngineAttemptPhaseCompletion:
+        retry = None
+        if attempt.status == "IN_RETRY":
+            refs = [
+                _item_ref(item)
+                for item in await store.items_of(session, attempt.attempt_id)
+                if item.phase == "RETRY"
+            ]
+            retry = EngineRetryPhase(total=len(refs), items=refs)
+        return EngineAttemptPhaseCompletion(
+            attempt_id=str(attempt.attempt_id),
+            status=attempt.status,
+            lesson_summary=EnginePhaseSummary(
+                total=attempt.lesson_total,
+                correct=attempt.lesson_correct,
+                wrong=attempt.lesson_wrong,
+            ),
+            retry_summary=(
+                EnginePhaseSummary(
+                    total=attempt.retry_total,
+                    correct=attempt.retry_correct,
+                    wrong=attempt.retry_wrong,
+                )
+                if attempt.retry_total > 0
+                else None
+            ),
+            retry=retry,
+        )
+
     # --- helpers --------------------------------------------------------------
 
     async def _entitlement(self, snapshot: ContentSnapshot, learner_id: str) -> Entitlement:
@@ -462,6 +734,12 @@ def _feedback(
         correct_option_label=label,
         explanation=explanation.get(locale, explanation.get(FALLBACK_LOCALE)),
     )
+
+
+def _attempt_seed(attempt_id: uuid.UUID) -> int:
+    """The attempt's retry shuffle seed: the two halves of its id, xor-ed (as the engine)."""
+    value = attempt_id.int
+    return (value >> 64) ^ (value & ((1 << 64) - 1))
 
 
 def _estimated_minutes(lesson: SnapshotLesson, question_count: int) -> int:

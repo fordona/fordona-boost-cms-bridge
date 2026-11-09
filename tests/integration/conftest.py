@@ -12,6 +12,11 @@ from fordona_connect.db.connection import ASYNCPG_CONNECT_ARGS, DB_SCHEMA
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# Every container here is stopped by its own context manager, so testcontainers'
+# Ryuk reaper adds nothing, and it intermittently fails to publish its port
+# ("Port mapping ... 8080 is not available"), erroring whole test modules.
+os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
+
 # Learner and content state, emptied before each test that asks for ``learning_engine``.
 _LEARNING_TABLES = (
     "content_release",
@@ -20,6 +25,10 @@ _LEARNING_TABLES = (
     "content_mock_exam",
     "content_journey",
     "mistake",
+    "lesson_progress",
+    "learner_summary",
+    "learner_activity_day",
+    "learner_activity_lesson",
 )
 
 

@@ -9,6 +9,7 @@ import asyncio
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
@@ -25,7 +26,7 @@ from fordona_connect.learning.content.models import (
     ContentRelease,
     ContentUnit,
 )
-from fordona_connect.learning.retry.models import RetryPolicyRow
+from fordona_connect.learning.retry.models import QuestionNeighbour, RetryPolicyRow
 from fordona_connect.learning.retry.policy import PolicyRow, RetryPolicy, resolve_policy
 
 log = get_logger(__name__)
@@ -68,6 +69,17 @@ class ActiveQuestion:
 
 
 @dataclass(frozen=True, slots=True)
+class Neighbour:
+    """A similar question, ranked for one question (see ``retry.neighbours``)."""
+
+    question_id: str
+    rank: int
+    neighbour_id: str
+    score: Decimal
+    provider: str = "metadata"
+
+
+@dataclass(frozen=True, slots=True)
 class SnapshotChallenge:
     challenge_id: str
     milestone_id: str
@@ -85,6 +97,7 @@ class ContentSnapshot:
     question_by_id: Mapping[str, ActiveQuestion] = field(default_factory=dict)
     questions_by_lesson: Mapping[str, Sequence[ActiveQuestion]] = field(default_factory=dict)
     challenge_by_lesson: Mapping[str, SnapshotChallenge] = field(default_factory=dict)
+    neighbours_by_question: Mapping[str, Sequence[Neighbour]] = field(default_factory=dict)
     policy_rows: Sequence[PolicyRow] = ()
 
     def lessons_of(self, unit_id: str) -> Sequence[SnapshotLesson]:
@@ -102,6 +115,12 @@ class ContentSnapshot:
     def challenge_for(self, lesson_id: str) -> SnapshotChallenge | None:
         return self.challenge_by_lesson.get(lesson_id)
 
+    def neighbours_of(self, question_id: str) -> Sequence[Neighbour]:
+        return self.neighbours_by_question.get(question_id, ())
+
+    def total_lessons(self) -> int:
+        return sum(len(self.lessons_of(unit.unit_id)) for unit in self.units)
+
     def retry_policy_for(self, unit_id: str | None, lesson_id: str | None) -> RetryPolicy:
         return resolve_policy(self.policy_rows, unit_id, lesson_id)
 
@@ -114,6 +133,7 @@ def build_snapshot(
     questions: Sequence[ActiveQuestion],
     challenges: Sequence[SnapshotChallenge],
     policy_rows: Sequence[PolicyRow],
+    neighbours: Sequence[Neighbour] = (),
 ) -> ContentSnapshot:
     lessons_by_unit: dict[str, list[SnapshotLesson]] = {}
     lesson_by_id: dict[str, SnapshotLesson] = {}
@@ -155,8 +175,47 @@ def build_snapshot(
         question_by_id=question_by_id,
         questions_by_lesson={key: tuple(items) for key, items in questions_by_lesson.items()},
         challenge_by_lesson=challenge_by_lesson,
+        neighbours_by_question=_group_neighbours(neighbours),
         policy_rows=tuple(policy_rows),
     )
+
+
+def _group_neighbours(neighbours: Sequence[Neighbour]) -> dict[str, tuple[Neighbour, ...]]:
+    grouped: dict[str, list[Neighbour]] = {}
+    for neighbour in sorted(neighbours, key=lambda n: (n.question_id, n.rank)):
+        grouped.setdefault(neighbour.question_id, []).append(neighbour)
+    return {question_id: tuple(items) for question_id, items in grouped.items()}
+
+
+async def load_active_questions(session: AsyncSession) -> list[ActiveQuestion]:
+    """Every ACTIVE question with its current revision."""
+    revision_rows = await session.execute(
+        select(ContentQuestion, ContentQuestionRevision)
+        .join(
+            ContentQuestionRevision,
+            (ContentQuestionRevision.question_id == ContentQuestion.question_id)
+            & (ContentQuestionRevision.version == ContentQuestion.current_version),
+        )
+        .where(ContentQuestion.status == "ACTIVE")
+    )
+    return [
+        ActiveQuestion(
+            question_id=question.question_id,
+            home_lesson_id=question.home_lesson_id,
+            unit_id=question.unit_id,
+            version=revision.version,
+            type=revision.type,
+            difficulty=revision.difficulty,
+            level=revision.level,
+            domain_code=revision.domain_code,
+            topic_tag=revision.topic_tag,
+            correct_option_key=revision.correct_option_key,
+            option_keys=tuple(revision.option_keys),
+            media_kinds=tuple(revision.media_kinds),
+            explanation=revision.explanation,
+        )
+        for question, revision in revision_rows
+    ]
 
 
 async def load_snapshot(session: AsyncSession, release_id: int) -> ContentSnapshot:
@@ -180,33 +239,7 @@ async def load_snapshot(session: AsyncSession, release_id: int) -> ContentSnapsh
         )
         if row.unit_id in unit_ids
     ]
-    revision_rows = await session.execute(
-        select(ContentQuestion, ContentQuestionRevision)
-        .join(
-            ContentQuestionRevision,
-            (ContentQuestionRevision.question_id == ContentQuestion.question_id)
-            & (ContentQuestionRevision.version == ContentQuestion.current_version),
-        )
-        .where(ContentQuestion.status == "ACTIVE")
-    )
-    questions = [
-        ActiveQuestion(
-            question_id=question.question_id,
-            home_lesson_id=question.home_lesson_id,
-            unit_id=question.unit_id,
-            version=revision.version,
-            type=revision.type,
-            difficulty=revision.difficulty,
-            level=revision.level,
-            domain_code=revision.domain_code,
-            topic_tag=revision.topic_tag,
-            correct_option_key=revision.correct_option_key,
-            option_keys=tuple(revision.option_keys),
-            media_kinds=tuple(revision.media_kinds),
-            explanation=revision.explanation,
-        )
-        for question, revision in revision_rows
-    ]
+    questions = await load_active_questions(session)
 
     lessons_of_challenge: dict[str, list[str]] = {}
     for lesson_link in await session.scalars(
@@ -234,6 +267,16 @@ async def load_snapshot(session: AsyncSession, release_id: int) -> ContentSnapsh
         PolicyRow(scope=row.scope, scope_id=row.scope_id, key_values=row.key_values)
         for row in await session.scalars(select(RetryPolicyRow))
     ]
+    neighbours = [
+        Neighbour(
+            question_id=row.question_id,
+            rank=row.rank,
+            neighbour_id=row.neighbour_id,
+            score=row.score,
+            provider=row.provider,
+        )
+        for row in await session.scalars(select(QuestionNeighbour))
+    ]
     return build_snapshot(
         release_id,
         units=units,
@@ -241,6 +284,7 @@ async def load_snapshot(session: AsyncSession, release_id: int) -> ContentSnapsh
         questions=questions,
         challenges=challenges,
         policy_rows=policy_rows,
+        neighbours=neighbours,
     )
 
 

@@ -174,3 +174,26 @@ async def resolve_mistake(
         .values(status="RESOLVED", resolved_via=resolved_via, resolved_at=now)
         .execution_options(synchronize_session=False)
     )
+
+
+async def seen_question_ids(session: AsyncSession, learner_id: str) -> set[str]:
+    rows = await session.scalars(
+        select(AttemptItem.question_id)
+        .where(AttemptItem.learner_id == learner_id, AttemptItem.answered_at.is_not(None))
+        .distinct()
+    )
+    return set(rows)
+
+
+async def insert_items(session: AsyncSession, items: Sequence[dict[str, Any]]) -> None:
+    if items:
+        await session.execute(insert(AttemptItem), list(items))
+
+
+async def update_attempt(session: AsyncSession, attempt_id: UUID, **values: Any) -> None:
+    await session.execute(
+        update(LessonAttempt)
+        .where(LessonAttempt.attempt_id == attempt_id)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )

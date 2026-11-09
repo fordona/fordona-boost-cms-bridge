@@ -8,7 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from fordona_connect.container import Services
 from fordona_connect.core.config import SUPPORTED_LOCALES, Settings
-from fordona_connect.core.context import learner_token_var
+from fordona_connect.core.context import learner_id_var, learner_token_var
 from fordona_connect.core.errors import RateLimitedError, UnauthorizedError, ValidationFailedError
 from fordona_connect.core.locale import UnsupportedLocaleError, resolve_locale
 from fordona_connect.core.security import Learner
@@ -48,6 +48,7 @@ async def get_current_learner(
         # Only a token that passed verification is ever forwarded to Boost.
         learner_token_var.set(credentials.credentials)
     request.state.learner_sub = learner.sub
+    learner_id_var.set(learner.sub)
     structlog.contextvars.bind_contextvars(learner_sub=learner.sub)
     return learner
 

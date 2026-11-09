@@ -6,6 +6,7 @@ __all__ = [
     "AttemptNotFoundError",
     "ItemNotFoundError",
     "LessonNotFoundError",
+    "MockExamNotFoundError",
     "OptionInvalidError",
     "PhaseClosedError",
     "PhaseIncompleteError",
@@ -62,3 +63,9 @@ class OptionInvalidError(AppError):
     status_code = 422
     error_code = "THEORY_OPTION_INVALID"
     type_path = "theory/option-invalid"
+
+
+class MockExamNotFoundError(AppError):
+    status_code = 404
+    error_code = "THEORY_MOCK_EXAM_NOT_FOUND"
+    type_path = "theory/mock-exam-not-found"

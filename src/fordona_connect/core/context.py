@@ -17,3 +17,7 @@ def get_correlation_id() -> str | None:
 # which copies the context of the request that started it) without threading a
 # secret through every service signature. It is never logged.
 learner_token_var: ContextVar[str | None] = ContextVar("learner_token", default=None)
+
+# The authenticated learner's Kinde subject for this request: the learning
+# service's learner id. Set by ``api.deps.get_current_learner``.
+learner_id_var: ContextVar[str | None] = ContextVar("learner_id", default=None)

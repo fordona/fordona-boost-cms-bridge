@@ -94,6 +94,16 @@ class Settings(BaseSettings):
     # Page size for Boost's paged list endpoints during a sync.
     content_page_size: int = Field(default=250, ge=1, le=1000)
 
+    # --- Learning ------------------------------------------------------------
+    # Question selection for a lesson attempt: the lesson's whole active-question bank
+    # ("lesson-bank-v1"), or the linked learning-journey challenge's quiz ("challenge-v1").
+    theory_selection_strategy: Literal["lesson-bank-v1", "challenge-v1"] = "lesson-bank-v1"
+    # First day of the home screen's week, and the daily challenge's lesson target.
+    progress_week_starts_on: Literal[
+        "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
+    ] = "SUNDAY"
+    progress_daily_challenge_lessons: int = Field(default=3, ge=1)
+
     # --- Locale ------------------------------------------------------------
     default_locale: str = "sv-SE"
 

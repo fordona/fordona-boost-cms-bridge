@@ -27,7 +27,10 @@ from fordona_connect.learning.content.models import (
     ContentUnit,
 )
 from fordona_connect.learning.content.read_model import ReadModel, Row
+from fordona_connect.learning.content.snapshot import load_active_questions
 from fordona_connect.learning.content.validation import ExclusionReason
+from fordona_connect.learning.retry.models import QuestionNeighbour
+from fordona_connect.learning.retry.neighbours import build_neighbours
 
 log = get_logger(__name__)
 
@@ -99,6 +102,23 @@ async def write_read_model(session: AsyncSession, model: ReadModel, now: datetim
             pg_insert(ContentQuestionRevision)
             .values([{**row, "release_id": release_id} for row in model.new_revisions])
             .on_conflict_do_nothing()
+        )
+    neighbours = build_neighbours(await load_active_questions(session))
+    await session.execute(delete(QuestionNeighbour))
+    if neighbours:
+        await session.execute(
+            insert(QuestionNeighbour),
+            [
+                {
+                    "question_id": n.question_id,
+                    "rank": n.rank,
+                    "neighbour_id": n.neighbour_id,
+                    "score": n.score,
+                    "provider": n.provider,
+                    "release_id": release_id,
+                }
+                for n in neighbours
+            ],
         )
     log.info(
         "content_release_created",
