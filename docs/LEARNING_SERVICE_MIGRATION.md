@@ -101,9 +101,23 @@ Each phase ends green (pytest, ruff, mypy) and is committed on its own.
   the legacy path for the mapping tests and a rollback. Journeys use Boost content and the
   platform client. **Not yet ported**: the engine's admin endpoints (manual sync trigger, content
   report, retry-policy edits); the sync runs on its timer and policies are rows in `retry_policy`.
-- [ ] **L8 Engine side** (fordona-engine, own branch): learner-context + entitlement endpoint,
-  outbox + `/internal/events`; then delete `learn/theory`, `learn/platform` theory admin, and the
-  sync job.
+- [x] **L8 Engine side** (2026-11-09, fordona-engine branch `feat/learning-platform-api`):
+  `learn/connect` with `GET /internal/learning/v1/learners/{kindeSubject}` and
+  `GET /internal/learning/v1/events?after=&limit=`, authenticated by the internal token alone
+  (`InternalTokenFilter`, renamed from `TheoryInternalTokenFilter`, now guarding all `/internal/`).
+  Outbox `learning_outbox_event` (V1_0_25), written by `LearningEventRecorder` on subscription
+  activation and on account erasure. `learn/theory`, the theory admin controller, both sync jobs,
+  the theory caches, error codes and config are removed; V1_0_26 drops the Boost-era tables.
+  `user.updated` is defined but not emitted yet (names change rarely; the 60 s cache covers it).
+
+## Rollout
+
+1. Deploy fordona-engine first (new endpoints are additive; theory removal only matters once
+   fordona-connect no longer calls `/internal/theory/**`, which `THEORY_BACKEND=local` ensures).
+2. Deploy fordona-connect with `BOOST_GRADING_TOKEN`, `CONTENT_SYNC_INTERVAL_SECONDS` (e.g. 60),
+   `PLATFORM_EVENTS_INTERVAL_SECONDS` (e.g. 5) and `THEORY_BACKEND=local`. The first sync fills the
+   content tables; until then lessons are empty.
+3. Learner history in the engine's old theory tables is not migrated (pre-launch: test data only).
 
 ## Source mapping (engine → connect)
 
