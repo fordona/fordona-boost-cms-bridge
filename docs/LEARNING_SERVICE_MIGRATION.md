@@ -63,10 +63,21 @@ Each phase ends green (pytest, ruff, mypy) and is committed on its own.
     from Boost must not fail the whole sync.
   - No templates, no topic-vocabulary check (both gone from Boost), no neighbour table yet (L3).
   - The in-memory content snapshot moves to L2, next to its first reader.
-- [ ] **L2 Selection and attempts**: question-set selectors (lesson bank, fixed template,
-  challenge), attempt start/resume/read, answer + grading, idempotency, attempt tables.
+- [x] **L2 Selection and attempts** (2026-11-09): attempt tables + mistake ledger + retry policy
+  table with its GLOBAL seed (migration 0005), in-memory content snapshot, unlock rules,
+  entitlement (subscribed, or the first unit), selectors (`lesson-bank-v1` default, `challenge-v1`),
+  and `AttemptService`: start (idempotent per request id, resumes the open attempt, recovers a
+  concurrent double start), read, lesson state, answer + grading (replay-safe, conflicts,
+  mistake ledger). Code: `learning/attempts/`, `learning/{selection,unlock,entitlement,errors}.py`,
+  `learning/content/snapshot.py`, `learning/retry/policy.py`.
+  - Learners are keyed by their **Kinde subject** (`learner_id`), not the engine's numeric user id.
+  - Responses reuse the `Engine*` models, so L7 swaps the engine client for this service.
+  - Subscription status comes through `SubscriptionSource` (implemented against the engine in L6).
+  - Progress side effects go through `ProgressRecorder` (no-op until L4).
+  - No templates (`TEMPLATE` item source and `fixed-v1` selector are gone with Boost's templates).
+  - A correct answer in the retry phase resolves a mistake as `REPEAT` (the engine never got there).
 - [ ] **L3 Retry phase**: neighbour builder (metadata similarity), retry composer, retry policy
-  (table, validator, resolver), phase completion.
+  validation and admin edits, lesson and retry phase completion.
 - [ ] **L4 Progress and screens**: progress tables, streaks (timezone-aware), unlocks, home,
   learning path (+ ETag), readiness, completion `next`/`progress`.
 - [ ] **L5 Mock exams and learning journeys**: mock exam flow on the shared attempt model;

@@ -1,18 +1,15 @@
 """The content sync against Postgres (testcontainers; skips without Docker) and fake Boost."""
 
 import asyncio
-import os
-from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
+from collections.abc import AsyncIterator
 
 import httpx
 import pytest
 import respx
 from sqlalchemy import func, select, text
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from fordona_connect.clients.boost.client import BoostClient
-from fordona_connect.db.connection import ASYNCPG_CONNECT_ARGS, DB_SCHEMA
 from fordona_connect.learning.content.models import (
     ContentChallenge,
     ContentChallengeQuestion,
@@ -29,57 +26,10 @@ from tests.learning_content.boost_world import BASE, LOCALES, BoostWorld, FakeLe
 
 pytestmark = pytest.mark.integration
 
-ROOT = Path(__file__).resolve().parents[2]
-
-
-def _docker_available() -> bool:
-    try:
-        import docker
-
-        docker.from_env().ping()
-    except Exception:
-        return False
-    return True
-
-
-@pytest.fixture(scope="module")
-def database_url() -> Iterator[str]:
-    if not _docker_available():
-        pytest.skip("Docker is not available")
-    from alembic import command
-    from alembic.config import Config
-    from testcontainers.community.postgres import PostgresContainer
-
-    with PostgresContainer("postgres:16-alpine", driver="asyncpg") as container:
-        url = container.get_connection_url()
-        config = Config(str(ROOT / "alembic.ini"))
-        config.set_main_option("script_location", str(ROOT / "migrations"))
-        previous = os.environ.get("DATABASE_URL")
-        os.environ["DATABASE_URL"] = url
-        try:
-            command.upgrade(config, "head")
-        finally:
-            if previous is None:
-                os.environ.pop("DATABASE_URL", None)
-            else:
-                os.environ["DATABASE_URL"] = previous
-        yield url
-
 
 @pytest.fixture
-async def engine(database_url: str) -> AsyncIterator[AsyncEngine]:
-    engine = create_async_engine(database_url, connect_args=ASYNCPG_CONNECT_ARGS)
-    async with engine.begin() as connection:
-        # Each test starts from an empty content read model.
-        await connection.execute(
-            text(
-                f"TRUNCATE {DB_SCHEMA}.content_release, {DB_SCHEMA}.content_unit, "
-                f"{DB_SCHEMA}.content_mock_exam, {DB_SCHEMA}.content_journey CASCADE"
-            )
-        )
-        await connection.execute(text(f"TRUNCATE {DB_SCHEMA}.content_question CASCADE"))
-    yield engine
-    await engine.dispose()
+def engine(learning_engine: AsyncEngine) -> AsyncEngine:
+    return learning_engine
 
 
 @pytest.fixture
