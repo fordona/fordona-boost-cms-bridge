@@ -110,6 +110,20 @@ Each phase ends green (pytest, ruff, mypy) and is committed on its own.
   the theory caches, error codes and config are removed; V1_0_26 drops the Boost-era tables.
   `user.updated` is defined but not emitted yet (names change rarely; the 60 s cache covers it).
 
+## Verification against Boost dev (2026-11-09)
+
+Boost dev (`boost-dev.fordona.dev`) holds 3 modules, 6 chapters and 18 published questions (sv-SE +
+en-GB). Through the Boost MCP, learning journey **3** ("Testresa: fordona-connect" / "Test journey:
+fordona-connect") was created on that content: milestones 3–5, challenges 4–9, each challenge
+linking one chapter and quizzing its three questions. It is a **draft**: an editor must publish it
+in the CMS before `/v1/delivery/learning-journeys` serves it.
+
+`tests/fixtures/boost_dev_catalogue.json` captures that catalogue (real ids, texts and answer keys;
+chapter HTML shortened), and `tests/integration/test_boost_dev_catalogue.py` runs the pipeline over
+it: the sync (18 grading calls, all lessons visible, all questions active, neighbours built), a
+lesson attempt graded with the real answer keys through to the retry phase, and journey 3 through
+`LearningJourneyService`.
+
 ## Rollout
 
 1. Deploy fordona-engine first (new endpoints are additive; theory removal only matters once
