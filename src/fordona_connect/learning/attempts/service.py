@@ -22,18 +22,6 @@ from typing import Any, Protocol
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fordona_connect.clients.engine.theory import (
-    EngineAnswerFeedback,
-    EngineAttempt,
-    EngineAttemptItemRef,
-    EngineAttemptPhaseCompletion,
-    EngineCompletionNext,
-    EngineCompletionProgress,
-    EngineLessonOpenAttemptRef,
-    EngineLessonState,
-    EnginePhaseSummary,
-    EngineRetryPhase,
-)
 from fordona_connect.core.errors import ErrorCode
 from fordona_connect.core.logging import get_logger
 from fordona_connect.learning.attempts import store
@@ -59,6 +47,18 @@ from fordona_connect.learning.errors import (
 from fordona_connect.learning.retry.composer import LessonItem, compose_retry
 from fordona_connect.learning.retry.policy import RetryPolicy
 from fordona_connect.learning.selection import Selection, Strategy, select_questions
+from fordona_connect.learning.theory_models import (
+    TheoryAnswerFeedback,
+    TheoryAttempt,
+    TheoryAttemptItemRef,
+    TheoryAttemptPhaseCompletion,
+    TheoryCompletionNext,
+    TheoryCompletionProgress,
+    TheoryLessonOpenAttemptRef,
+    TheoryLessonState,
+    TheoryPhaseSummary,
+    TheoryRetryPhase,
+)
 from fordona_connect.learning.unlock import UnlockStatus, unlock_status
 
 log = get_logger(__name__)
@@ -103,11 +103,11 @@ class CompletionSummaries(Protocol):
 
     async def completion_next(
         self, learner_id: str, *, locale: str
-    ) -> EngineCompletionNext | None: ...
+    ) -> TheoryCompletionNext | None: ...
 
     async def completion_progress(
         self, learner_id: str, *, locale: str, timezone: str | None
-    ) -> EngineCompletionProgress: ...
+    ) -> TheoryCompletionProgress: ...
 
 
 class NoProgress:
@@ -152,7 +152,7 @@ class AttemptService:
 
     # --- start ------------------------------------------------------------
 
-    async def start(self, learner_id: str, lesson_id: str, request_id: uuid.UUID) -> EngineAttempt:
+    async def start(self, learner_id: str, lesson_id: str, request_id: uuid.UUID) -> TheoryAttempt:
         async with self._sessionmaker() as session:
             existing = await store.find_by_request(session, learner_id, request_id)
             if existing is not None:
@@ -228,7 +228,7 @@ class AttemptService:
             strategy=selection.strategy.value,
             questions=len(items),
         )
-        return EngineAttempt(
+        return TheoryAttempt(
             attempt_id=str(attempt_id),
             status="IN_LESSON",
             attempt_no=attempt_no,
@@ -237,14 +237,14 @@ class AttemptService:
 
     # --- read ---------------------------------------------------------------
 
-    async def get(self, learner_id: str, attempt_id: uuid.UUID) -> EngineAttempt:
+    async def get(self, learner_id: str, attempt_id: uuid.UUID) -> TheoryAttempt:
         async with self._sessionmaker() as session:
             attempt = await store.get_attempt(session, attempt_id)
             if attempt is None or attempt.learner_id != learner_id:
                 raise AttemptNotFoundError(f"Attempt not found: {attempt_id}")
             return await self._attempt_out(session, attempt)
 
-    async def lesson_state(self, learner_id: str, lesson_id: str) -> EngineLessonState:
+    async def lesson_state(self, learner_id: str, lesson_id: str) -> TheoryLessonState:
         snapshot = await self._snapshots.get()
         lesson = snapshot.lesson(lesson_id)
         if lesson is None:
@@ -266,7 +266,7 @@ class AttemptService:
             open_attempt = None if locked else await store.find_open(session, learner_id, lesson_id)
             open_ref = None
             if open_attempt is not None:
-                open_ref = EngineLessonOpenAttemptRef(
+                open_ref = TheoryLessonOpenAttemptRef(
                     attempt_id=str(open_attempt.attempt_id), phase=open_attempt.status
                 )
                 question_count = sum(
@@ -280,7 +280,7 @@ class AttemptService:
             else:
                 question_count = len(select_questions(snapshot, lesson_id, self._strategy).refs)
 
-        return EngineLessonState(
+        return TheoryLessonState(
             status=status.value,
             locked=locked,
             lock_reason=lock_reason,
@@ -302,7 +302,7 @@ class AttemptService:
         response_id: uuid.UUID,
         duration_ms: int | None,
         locale: str,
-    ) -> EngineAnswerFeedback:
+    ) -> TheoryAnswerFeedback:
         snapshot = await self._snapshots.get()
         async with self._sessionmaker() as session, session.begin():
             attempt = await store.get_attempt(session, attempt_id, lock="share")
@@ -371,7 +371,7 @@ class AttemptService:
         *,
         locale: str,
         timezone: str | None,
-    ) -> EngineAttemptPhaseCompletion:
+    ) -> TheoryAttemptPhaseCompletion:
         result = await self._complete_lesson_phase(
             learner_id, attempt_id, locale=locale, timezone=timezone
         )
@@ -384,7 +384,7 @@ class AttemptService:
         *,
         locale: str,
         timezone: str | None,
-    ) -> EngineAttemptPhaseCompletion:
+    ) -> TheoryAttemptPhaseCompletion:
         result = await self._complete_retry_phase(
             learner_id, attempt_id, locale=locale, timezone=timezone
         )
@@ -392,11 +392,11 @@ class AttemptService:
 
     async def _with_summaries(
         self,
-        result: EngineAttemptPhaseCompletion,
+        result: TheoryAttemptPhaseCompletion,
         learner_id: str,
         locale: str,
         timezone: str | None,
-    ) -> EngineAttemptPhaseCompletion:
+    ) -> TheoryAttemptPhaseCompletion:
         """Add ``next``/``progress`` to a completed attempt, after its transaction committed.
 
         Recomputed on every call, replays included: other activity may have happened since.
@@ -419,7 +419,7 @@ class AttemptService:
         *,
         locale: str,
         timezone: str | None,
-    ) -> EngineAttemptPhaseCompletion:
+    ) -> TheoryAttemptPhaseCompletion:
         """All lesson items answered: complete (no mistakes) or compose the retry phase.
 
         An exclusive lock serialises two devices completing at once and keeps a late
@@ -517,7 +517,7 @@ class AttemptService:
         *,
         locale: str,
         timezone: str | None,
-    ) -> EngineAttemptPhaseCompletion:
+    ) -> TheoryAttemptPhaseCompletion:
         async with self._sessionmaker() as session, session.begin():
             attempt = await self._locked_attempt(session, learner_id, attempt_id)
             if attempt.status == "COMPLETED":
@@ -567,7 +567,7 @@ class AttemptService:
         attempt: LessonAttempt,
         locale: str,
         timezone: str | None,
-    ) -> EngineAttemptPhaseCompletion:
+    ) -> TheoryAttemptPhaseCompletion:
         retry = None
         if attempt.status == "IN_RETRY":
             refs = [
@@ -575,17 +575,17 @@ class AttemptService:
                 for item in await store.items_of(session, attempt.attempt_id)
                 if item.phase == "RETRY"
             ]
-            retry = EngineRetryPhase(total=len(refs), items=refs)
-        return EngineAttemptPhaseCompletion(
+            retry = TheoryRetryPhase(total=len(refs), items=refs)
+        return TheoryAttemptPhaseCompletion(
             attempt_id=str(attempt.attempt_id),
             status=attempt.status,
-            lesson_summary=EnginePhaseSummary(
+            lesson_summary=TheoryPhaseSummary(
                 total=attempt.lesson_total,
                 correct=attempt.lesson_correct,
                 wrong=attempt.lesson_wrong,
             ),
             retry_summary=(
-                EnginePhaseSummary(
+                TheoryPhaseSummary(
                     total=attempt.retry_total,
                     correct=attempt.retry_correct,
                     wrong=attempt.retry_wrong,
@@ -650,9 +650,9 @@ class AttemptService:
             )
         return items
 
-    async def _attempt_out(self, session: AsyncSession, attempt: LessonAttempt) -> EngineAttempt:
+    async def _attempt_out(self, session: AsyncSession, attempt: LessonAttempt) -> TheoryAttempt:
         items = await store.items_of(session, attempt.attempt_id)
-        return EngineAttempt(
+        return TheoryAttempt(
             attempt_id=str(attempt.attempt_id),
             status=attempt.status,
             attempt_no=attempt.attempt_no,
@@ -699,8 +699,8 @@ class AttemptService:
         )
 
 
-def _item_ref(item: AttemptItem) -> EngineAttemptItemRef:
-    return EngineAttemptItemRef(
+def _item_ref(item: AttemptItem) -> TheoryAttemptItemRef:
+    return TheoryAttemptItemRef(
         seq=item.seq,
         phase=item.phase,
         question_id=item.question_id,
@@ -710,8 +710,8 @@ def _item_ref(item: AttemptItem) -> EngineAttemptItemRef:
     )
 
 
-def _item_ref_from_row(row: dict[str, Any]) -> EngineAttemptItemRef:
-    return EngineAttemptItemRef(
+def _item_ref_from_row(row: dict[str, Any]) -> TheoryAttemptItemRef:
+    return TheoryAttemptItemRef(
         seq=row["seq"],
         phase=row["phase"],
         question_id=row["question_id"],
@@ -723,10 +723,10 @@ def _item_ref_from_row(row: dict[str, Any]) -> EngineAttemptItemRef:
 
 def _feedback(
     item: AttemptItem, correct_key: str, explanation: dict[str, Any], locale: str
-) -> EngineAnswerFeedback:
+) -> TheoryAnswerFeedback:
     order = list(item.option_order)
     label = _OPTION_LABELS[order.index(correct_key)] if correct_key in order else ""
-    return EngineAnswerFeedback(
+    return TheoryAnswerFeedback(
         seq=item.seq,
         is_correct=bool(item.is_correct),
         selected_option_key=item.selected_option_key or "",

@@ -28,9 +28,6 @@ from fordona_connect.cache.rate_limit import RateLimiter
 from fordona_connect.cache.redis_cache import RedisCache
 from fordona_connect.clients.boost.client import BoostClient
 from fordona_connect.clients.boost.client import create_http_client as create_boost_http_client
-from fordona_connect.clients.engine.client import EngineClient
-from fordona_connect.clients.engine.client import create_http_client as create_engine_http_client
-from fordona_connect.clients.engine.theory import EngineTheoryClient
 from fordona_connect.container import Services
 from fordona_connect.core.config import Settings
 from fordona_connect.core.context import learner_token_var
@@ -44,6 +41,7 @@ from fordona_connect.services.media import build_asset_url_resolver
 from fordona_connect.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 from fordona_connect.services.theory_service import TheoryService
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
+from tests.theory_backend import FakeTheoryBackend
 
 BOOST = "https://boost.test"
 ENGINE = "https://engine.test"
@@ -72,18 +70,11 @@ class Harness:
     app: FastAPI
     client: httpx.AsyncClient
     boost: respx.MockRouter
+    theory: FakeTheoryBackend
     readiness: dict[str, Exception | None] = field(default_factory=dict)
 
     def auth(self, **claims: object) -> dict[str, str]:
         return {"Authorization": f"Bearer {SIGNING_KEY.token(**claims)}"}
-
-    @property
-    def engine(self) -> respx.MockRouter:
-        """Same underlying respx router as ``boost`` — one mock intercepts every
-        host; this is just a self-documenting name for routes registered against
-        ``ENGINE`` rather than ``BOOST``.
-        """
-        return self.boost
 
 
 def make_settings(**overrides: object) -> Settings:
@@ -106,9 +97,6 @@ def make_settings(**overrides: object) -> Settings:
         "media_signing_key": "media-secret",
         # The background content sync would call Boost on its own; tests run it explicitly.
         "content_sync_interval_seconds": 0,
-        # The route/mapping tests drive TheoryService through a mocked engine; the local
-        # backend is covered end to end in tests/integration/test_local_backend.py.
-        "theory_backend": "engine",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
@@ -120,6 +108,9 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
     async def factory(**setting_overrides: object) -> AsyncIterator[Harness]:
         settings = make_settings(**setting_overrides)
         readiness: dict[str, Exception | None] = {"database": None, "redis": None}
+        # The route/mapping tests drive TheoryService through an in-memory backend; the
+        # local backend is covered end to end in tests/integration/test_local_backend.py.
+        theory_backend = FakeTheoryBackend()
 
         with respx.mock(assert_all_called=False) as mock:
             mock.get(JWKS_URI).respond(json=jwks(SIGNING_KEY))
@@ -129,7 +120,6 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                 async with (
                     httpx.AsyncClient() as jwks_http,
                     create_boost_http_client(s) as boost_http,
-                    create_engine_http_client(s) as engine_http,
                 ):
                     fake_redis = FakeAsyncRedis(server=FakeServer())
                     redis_cache = RedisCache(
@@ -151,12 +141,8 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                             batch_max_refs=s.boost_batch_max_refs,
                             batch_delay_seconds=s.content_prefetch_batch_delay_seconds,
                         )
-                    raw_engine_client = EngineClient.from_settings(engine_http, s)
                     theory = TheoryService(
-                        EngineTheoryClient(
-                            raw_engine_client,
-                            phase_complete_timeout=s.engine_phase_complete_timeout,
-                        ),
+                        theory_backend,
                         body_cache,
                         AttemptRefCache(redis_cache),
                         build_asset_url_resolver(s),
@@ -211,7 +197,7 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
             async with app.router.lifespan_context(app):
                 transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
                 async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-                    yield Harness(app, client, mock, readiness)
+                    yield Harness(app, client, mock, theory_backend, readiness)
 
     return factory
 

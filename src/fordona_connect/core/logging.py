@@ -34,13 +34,23 @@ def configure_logging(level: str = "INFO", fmt: str = "json") -> None:
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         _redact,
     ]
+    # Tracebacks never include local variables: a frame's locals can hold tokens
+    # (an outgoing request's headers, a decoded JWT), and _redact only sees event keys.
     renderer: Processor = (
         structlog.processors.JSONRenderer()
         if fmt == "json"
-        else structlog.dev.ConsoleRenderer(colors=sys.stdout.isatty())
+        else structlog.dev.ConsoleRenderer(
+            colors=sys.stdout.isatty(), exception_formatter=structlog.dev.plain_traceback
+        )
     )
     exception_formatter: list[Processor] = (
-        [structlog.processors.dict_tracebacks] if fmt == "json" else []
+        [
+            structlog.processors.ExceptionRenderer(
+                structlog.tracebacks.ExceptionDictTransformer(show_locals=False)
+            )
+        ]
+        if fmt == "json"
+        else []
     )
 
     structlog.configure(

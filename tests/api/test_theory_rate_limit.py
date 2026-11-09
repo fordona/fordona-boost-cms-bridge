@@ -2,8 +2,8 @@
 
 import respx
 
-from tests.conftest import ENGINE, Harness
-from tests.factories import engine_envelope, home_payload, readiness_payload
+from tests.conftest import Harness
+from tests.factories import home_payload, readiness_payload
 
 
 @respx.mock
@@ -12,9 +12,7 @@ async def test_exceeding_the_read_limit_is_429_with_retry_after(harness_factory:
         rate_limit_read_per_minute=1
     ) as harness:
         harness: Harness
-        harness.engine.get(f"{ENGINE}/internal/theory/v1/home").respond(
-            json=engine_envelope(home_payload())
-        )
+        harness.theory.set("get_home", home_payload())
 
         first = await harness.client.get("/v1/home", headers=harness.auth())
         second = await harness.client.get("/v1/home", headers=harness.auth())
@@ -31,13 +29,10 @@ async def test_read_and_write_limits_are_separate_buckets(harness_factory: objec
         rate_limit_read_per_minute=1, rate_limit_write_per_minute=1
     ) as harness:
         harness: Harness
-        harness.engine.get(f"{ENGINE}/internal/theory/v1/home").respond(
-            json=engine_envelope(home_payload())
-        )
-        harness.engine.post(f"{ENGINE}/internal/theory/v1/lessons/12/attempts").respond(
-            json=engine_envelope(
-                {"attemptId": "1", "status": "IN_LESSON", "attemptNo": 1, "items": []}
-            )
+        harness.theory.set("get_home", home_payload())
+        harness.theory.set(
+            "start_attempt",
+            {"attemptId": "1", "status": "IN_LESSON", "attemptNo": 1, "items": []},
         )
 
         read_response = await harness.client.get("/v1/home", headers=harness.auth())
@@ -57,9 +52,7 @@ async def test_buckets_are_separate_per_learner(harness_factory: object) -> None
         rate_limit_read_per_minute=1
     ) as harness:
         harness: Harness
-        harness.engine.get(f"{ENGINE}/internal/theory/v1/readiness").respond(
-            json=engine_envelope(readiness_payload())
-        )
+        harness.theory.set("get_readiness", readiness_payload())
 
         first_learner = await harness.client.get(
             "/v1/readiness", headers=harness.auth(sub="learner-a")

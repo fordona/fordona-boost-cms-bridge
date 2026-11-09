@@ -12,30 +12,6 @@ from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fordona_connect.clients.engine.theory import (
-    EngineCompletionNext,
-    EngineCompletionProgress,
-    EngineCompletionProgressDailyChallenge,
-    EngineHome,
-    EngineHomeContinue,
-    EngineHomeDailyChallenge,
-    EngineHomeReadiness,
-    EngineHomeStreak,
-    EngineHomeTabs,
-    EngineHomeTabState,
-    EngineHomeUpNext,
-    EngineHomeUser,
-    EngineHomeWeek,
-    EngineHomeWeekDay,
-    EngineLearningPath,
-    EngineLearningPathEntry,
-    EngineLearningPathUnit,
-    EngineLearningPathUnitProgress,
-    EngineLessonLastResult,
-    EngineLessonOpenAttemptRef,
-    EngineReadiness,
-    EngineReadinessUnit,
-)
 from fordona_connect.core.logging import get_logger
 from fordona_connect.learning.content.snapshot import ContentSnapshot, SnapshotProvider
 from fordona_connect.learning.entitlement import Entitlement, SubscriptionSource
@@ -49,6 +25,30 @@ from fordona_connect.learning.progress.calendar import (
     week_start,
 )
 from fordona_connect.learning.progress.models import LessonProgress
+from fordona_connect.learning.theory_models import (
+    TheoryCompletionNext,
+    TheoryCompletionProgress,
+    TheoryCompletionProgressDailyChallenge,
+    TheoryHome,
+    TheoryHomeContinue,
+    TheoryHomeDailyChallenge,
+    TheoryHomeReadiness,
+    TheoryHomeStreak,
+    TheoryHomeTabs,
+    TheoryHomeTabState,
+    TheoryHomeUpNext,
+    TheoryHomeUser,
+    TheoryHomeWeek,
+    TheoryHomeWeekDay,
+    TheoryLearningPath,
+    TheoryLearningPathEntry,
+    TheoryLearningPathUnit,
+    TheoryLearningPathUnitProgress,
+    TheoryLessonLastResult,
+    TheoryLessonOpenAttemptRef,
+    TheoryReadiness,
+    TheoryReadinessUnit,
+)
 from fordona_connect.learning.unlock import LessonUnlock, UnlockStatus, resolve_unlocks
 
 log = get_logger(__name__)
@@ -182,7 +182,7 @@ class ProgressScreens:
 
     # --- home -------------------------------------------------------------
 
-    async def home(self, learner_id: str, *, locale: str, timezone: str | None) -> EngineHome:
+    async def home(self, learner_id: str, *, locale: str, timezone: str | None) -> TheoryHome:
         snapshot, entitlement = await self._context(learner_id)
         zone = resolve_timezone(timezone)
         now = self._now()
@@ -207,7 +207,7 @@ class ProgressScreens:
         if resolved is not None:
             target = resolved.target
             lesson = snapshot.lesson(target.lesson_id)
-            continue_card = EngineHomeContinue(
+            continue_card = TheoryHomeContinue(
                 kind="lesson",
                 unit_id=target.unit_id,
                 unit_display_index=unit_index(snapshot, target.unit_id),
@@ -216,7 +216,7 @@ class ProgressScreens:
                 title=title_in(lesson.title, locale) if lesson else "",
                 action=resolved.action,
                 open_attempt=(
-                    EngineLessonOpenAttemptRef(
+                    TheoryLessonOpenAttemptRef(
                         attempt_id=str(resolved.open_attempt.open_attempt_id),
                         phase=resolved.open_attempt.status,
                     )
@@ -228,7 +228,7 @@ class ProgressScreens:
         if (next_unlock := resolve_up_next(unlocks)) is not None:
             lesson = snapshot.lesson(next_unlock.lesson_id)
             up_next.append(
-                EngineHomeUpNext(
+                TheoryHomeUpNext(
                     kind="lesson",
                     lesson_id=next_unlock.lesson_id,
                     display_index=lesson_index(
@@ -247,37 +247,37 @@ class ProgressScreens:
         sum_best = Decimal(summary.sum_best_accuracy) if summary else Decimal(0)
         progress_version = summary.progress_version if summary else 0
 
-        return EngineHome.model_validate(
+        return TheoryHome.model_validate(
             {
-                "user": EngineHomeUser(initials=initials, first_name=profile.first_name),
-                "week": EngineHomeWeek(
+                "user": TheoryHomeUser(initials=initials, first_name=profile.first_name),
+                "week": TheoryHomeWeek(
                     timezone=zone.key,
                     starts_on=self._week_starts_on,
                     days=[
-                        EngineHomeWeekDay(
+                        TheoryHomeWeekDay(
                             date=day.date.isoformat(), status=day.status, done=day.done
                         )
                         for day in week_days(today, self._week_starts_on, lessons_by_date)
                     ],
                 ),
-                "daily_challenge": EngineHomeDailyChallenge(
+                "daily_challenge": TheoryHomeDailyChallenge(
                     type=_DAILY_CHALLENGE_TYPE,
                     target=self._daily_target,
                     progress=today_count,
                     completed=today_count >= self._daily_target,
                     resets_at=_iso(next_midnight(now, zone)),
                 ),
-                "streak": EngineHomeStreak(
+                "streak": TheoryHomeStreak(
                     current=streak.current,
                     longest=streak.longest,
                     extended_today=streak.extended_today,
                 ),
-                "readiness": EngineHomeReadiness(
+                "readiness": TheoryHomeReadiness(
                     percent=readiness_percent(sum_best, snapshot.total_lessons())
                 ),
-                "tabs": EngineHomeTabs(
-                    learning_path=EngineHomeTabState(locked=False),
-                    mock_exams=EngineHomeTabState(
+                "tabs": TheoryHomeTabs(
+                    learning_path=TheoryHomeTabState(locked=False),
+                    mock_exams=TheoryHomeTabState(
                         locked=not mock_exams,
                         lock_reason=None if mock_exams else _MOCK_EXAMS_NOT_AVAILABLE,
                     ),
@@ -303,7 +303,7 @@ class ProgressScreens:
             locale,
         )
 
-    async def learning_path(self, learner_id: str, *, locale: str) -> EngineLearningPath:
+    async def learning_path(self, learner_id: str, *, locale: str) -> TheoryLearningPath:
         snapshot, entitlement = await self._context(learner_id)
         async with self._sessionmaker() as session:
             progress = await store.all_progress(session, learner_id)
@@ -327,11 +327,11 @@ class ProgressScreens:
                     and row.last_lesson_correct is not None
                     and row.last_lesson_total is not None
                 ):
-                    last_result = EngineLessonLastResult(
+                    last_result = TheoryLessonLastResult(
                         correct=row.last_lesson_correct, total=row.last_lesson_total
                     )
                 entries.append(
-                    EngineLearningPathEntry(
+                    TheoryLearningPathEntry(
                         kind="lesson",
                         lesson_id=lesson.lesson_id,
                         display_index=lesson_index(snapshot, unit.unit_id, lesson.lesson_id),
@@ -339,7 +339,7 @@ class ProgressScreens:
                         status=status.value,
                         last_result=last_result,
                         open_attempt=(
-                            EngineLessonOpenAttemptRef(
+                            TheoryLessonOpenAttemptRef(
                                 attempt_id=str(row.open_attempt_id), phase=row.status
                             )
                             if row is not None and row.open_attempt_id is not None
@@ -350,14 +350,14 @@ class ProgressScreens:
             locked = not entitlement.unit_entitled(unit.unit_id)
             total = len(lessons)
             units.append(
-                EngineLearningPathUnit(
+                TheoryLearningPathUnit(
                     unit_id=unit.unit_id,
                     display_index=unit_index(snapshot, unit.unit_id),
                     title=title_in(unit.title, locale),
                     icon_url=None,
                     locked=locked,
                     lock_reason=_SUBSCRIPTION_LOCK if locked else None,
-                    progress=EngineLearningPathUnitProgress(
+                    progress=TheoryLearningPathUnitProgress(
                         completed_lessons=completed,
                         total_lessons=total,
                         percent=round(100.0 * completed / total) if total else 0,
@@ -365,11 +365,11 @@ class ProgressScreens:
                     entries=entries,
                 )
             )
-        return EngineLearningPath(units=units)
+        return TheoryLearningPath(units=units)
 
     # --- readiness ----------------------------------------------------------
 
-    async def readiness(self, learner_id: str, *, locale: str) -> EngineReadiness:
+    async def readiness(self, learner_id: str, *, locale: str) -> TheoryReadiness:
         snapshot, entitlement = await self._context(learner_id)
         async with self._sessionmaker() as session:
             by_lesson = {
@@ -391,7 +391,7 @@ class ProgressScreens:
                 if row is not None and row.best_accuracy is not None:
                     unit_sum += row.best_accuracy
             units.append(
-                EngineReadinessUnit(
+                TheoryReadinessUnit(
                     unit_id=unit.unit_id,
                     display_index=unit_index(snapshot, unit.unit_id),
                     title=title_in(unit.title, locale),
@@ -409,7 +409,7 @@ class ProgressScreens:
             if completed_lessons
             else Decimal(0)
         )
-        return EngineReadiness(
+        return TheoryReadiness(
             percent=readiness_percent(sum_best, total_lessons),
             completed_lessons=completed_lessons,
             total_lessons=total_lessons,
@@ -419,7 +419,7 @@ class ProgressScreens:
 
     # --- completion summaries ---------------------------------------------
 
-    async def completion_next(self, learner_id: str, *, locale: str) -> EngineCompletionNext | None:
+    async def completion_next(self, learner_id: str, *, locale: str) -> TheoryCompletionNext | None:
         """The forward pointer after a completed attempt: never an open retake elsewhere."""
         snapshot, entitlement = await self._context(learner_id)
         async with self._sessionmaker() as session:
@@ -429,7 +429,7 @@ class ProgressScreens:
             return None
         target = resolved.target
         lesson = snapshot.lesson(target.lesson_id)
-        return EngineCompletionNext(
+        return TheoryCompletionNext(
             kind="lesson",
             lesson_id=target.lesson_id,
             display_index=lesson_index(snapshot, target.unit_id, target.lesson_id),
@@ -440,7 +440,7 @@ class ProgressScreens:
 
     async def completion_progress(
         self, learner_id: str, *, locale: str, timezone: str | None
-    ) -> EngineCompletionProgress:
+    ) -> TheoryCompletionProgress:
         snapshot, entitlement = await self._context(learner_id)
         zone = resolve_timezone(timezone)
         today = local_date(self._now(), zone)
@@ -456,16 +456,16 @@ class ProgressScreens:
             today,
         )
         sum_best = Decimal(summary.sum_best_accuracy) if summary else Decimal(0)
-        return EngineCompletionProgress(
-            streak=EngineHomeStreak(
+        return TheoryCompletionProgress(
+            streak=TheoryHomeStreak(
                 current=streak.current, longest=streak.longest, extended_today=streak.extended_today
             ),
-            daily_challenge=EngineCompletionProgressDailyChallenge(
+            daily_challenge=TheoryCompletionProgressDailyChallenge(
                 target=self._daily_target,
                 progress=today_count,
                 completed=today_count >= self._daily_target,
             ),
-            readiness=EngineHomeReadiness(
+            readiness=TheoryHomeReadiness(
                 percent=readiness_percent(sum_best, snapshot.total_lessons())
             ),
             learning_path_etag=learning_path_etag(

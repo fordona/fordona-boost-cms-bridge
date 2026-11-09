@@ -21,16 +21,15 @@ from uuid import UUID
 
 from fordona_connect.cache.attempt_refs import AttemptRefCache
 from fordona_connect.clients.boost.models import BoostQuestion
-from fordona_connect.clients.engine.theory import (
-    EngineAttempt,
-    EngineAttemptItemRef,
-    EngineTheoryClient,
-)
 from fordona_connect.core.errors import (
     ContentNotFoundError,
     ErrorCode,
     TheoryLessonLockedError,
     TheoryModuleLockedError,
+)
+from fordona_connect.learning.theory_models import (
+    TheoryAttempt,
+    TheoryAttemptItemRef,
 )
 from fordona_connect.schemas.theory import (
     AttemptOut,
@@ -54,13 +53,13 @@ from fordona_connect.services.media import AssetUrlResolver
 from fordona_connect.services.release_prefetch import ReleasePrefetchGate, ReleasePrefetchRunner
 
 if TYPE_CHECKING:
-    from fordona_connect.learning.backend import LocalTheoryBackend
+    from fordona_connect.learning.backend import TheoryBackend
 
 
 class TheoryService:
     def __init__(
         self,
-        engine: "EngineTheoryClient | LocalTheoryBackend",
+        backend: "TheoryBackend",
         body_cache: BodyCache,
         attempt_refs: AttemptRefCache,
         resolver: AssetUrlResolver,
@@ -68,7 +67,7 @@ class TheoryService:
         prefetch_gate: ReleasePrefetchGate | None = None,
         prefetch_runner: ReleasePrefetchRunner | None = None,
     ) -> None:
-        self._engine = engine
+        self._backend = backend
         self._bodies = body_cache
         self._attempt_refs = attempt_refs
         self._resolver = resolver
@@ -82,14 +81,14 @@ class TheoryService:
     # --- Home, learning path, readiness ----------------------------------------
 
     async def home(self, *, locale: str, timezone: str | None) -> HomeOut:
-        engine_home = await self._engine.get_home(accept_language=locale, timezone=timezone)
+        engine_home = await self._backend.get_home(accept_language=locale, timezone=timezone)
         await self._maybe_prefetch(engine_home.learning_path_etag)
         return mappers.map_home(engine_home)
 
     async def learning_path(
         self, *, locale: str, if_none_match: str | None
     ) -> tuple[LearningPathOut | None, str | None, bool]:
-        path, etag, not_modified = await self._engine.get_learning_path(
+        path, etag, not_modified = await self._backend.get_learning_path(
             accept_language=locale, if_none_match=if_none_match
         )
         if etag:
@@ -99,17 +98,17 @@ class TheoryService:
         return mappers.map_learning_path(path), etag, False
 
     async def readiness(self, *, locale: str) -> ReadinessOut:
-        engine_readiness = await self._engine.get_readiness(accept_language=locale)
+        engine_readiness = await self._backend.get_readiness(accept_language=locale)
         return mappers.map_readiness(engine_readiness)
 
     # --- Mock exams (read-only browsing, 2026-11-07) ------------------------------
 
     async def list_mock_exams(self, *, locale: str) -> list[MockExamSummaryOut]:
-        exams = await self._engine.list_mock_exams(accept_language=locale)
+        exams = await self._backend.list_mock_exams(accept_language=locale)
         return [mappers.map_mock_exam_summary(exam) for exam in exams]
 
     async def mock_exam_detail(self, mock_exam_id: str, *, locale: str) -> MockExamDetailOut:
-        exam = await self._engine.get_mock_exam(mock_exam_id, accept_language=locale)
+        exam = await self._backend.get_mock_exam(mock_exam_id, accept_language=locale)
         refs = [QuestionRef(id=item.question_id, version=item.version) for item in exam.items]
         found, missing = await self._bodies.get_question_revisions(refs, locale)
         if missing:
@@ -122,7 +121,7 @@ class TheoryService:
     # --- Lesson theory -----------------------------------------------------------
 
     async def lesson_detail(self, lesson_id: str, *, locale: str) -> LessonDetailOut:
-        state = await self._engine.get_lesson_state(lesson_id)
+        state = await self._backend.get_lesson_state(lesson_id)
         if state.locked:
             if state.lock_reason == ErrorCode.THEORY_LESSON_LOCKED:
                 raise TheoryLessonLockedError()
@@ -145,11 +144,11 @@ class TheoryService:
     # --- Attempts ------------------------------------------------------------------
 
     async def start_attempt(self, lesson_id: str, *, request_id: UUID, locale: str) -> AttemptOut:
-        attempt = await self._engine.start_attempt(lesson_id, str(request_id))
+        attempt = await self._backend.start_attempt(lesson_id, str(request_id))
         return await self._build_attempt_out(attempt, lesson_id=lesson_id, locale=locale)
 
     async def get_attempt(self, attempt_id: UUID, *, locale: str) -> AttemptOut:
-        attempt = await self._engine.get_attempt(str(attempt_id))
+        attempt = await self._backend.get_attempt(str(attempt_id))
         # lessonId has no source here (see schemas/theory.py's module docstring):
         # neither AttemptDTO nor a second engine call this route's budget allows.
         return await self._build_attempt_out(attempt, lesson_id=None, locale=locale)
@@ -164,7 +163,7 @@ class TheoryService:
         duration_ms: int | None,
         locale: str,
     ) -> ResponseFeedbackOut:
-        feedback = await self._engine.answer(
+        feedback = await self._backend.answer(
             str(attempt_id),
             response_id=str(response_id),
             seq=seq,
@@ -177,7 +176,7 @@ class TheoryService:
             # Cold cache (eviction, or a restart between hydrating this attempt and
             # answering): one extra engine call repopulates the mapping rather than
             # ever answering against the wrong question's cached body.
-            attempt = await self._engine.get_attempt(str(attempt_id))
+            attempt = await self._backend.get_attempt(str(attempt_id))
             await self._attempt_refs.remember(
                 str(attempt_id), mappers.item_refs_by_seq(attempt.items)
             )
@@ -202,7 +201,7 @@ class TheoryService:
     async def complete_lesson_phase(
         self, attempt_id: UUID, *, locale: str, timezone: str | None
     ) -> LessonPhaseCompletionOut:
-        completion = await self._engine.complete_lesson_phase(
+        completion = await self._backend.complete_lesson_phase(
             str(attempt_id), accept_language=locale, timezone=timezone
         )
         retry_items_out: list[ItemOut] | None = None
@@ -218,7 +217,7 @@ class TheoryService:
     async def complete_retry_phase(
         self, attempt_id: UUID, *, locale: str, timezone: str | None
     ) -> RetryPhaseCompletionOut:
-        completion = await self._engine.complete_retry_phase(
+        completion = await self._backend.complete_retry_phase(
             str(attempt_id), accept_language=locale, timezone=timezone
         )
         return mappers.map_retry_phase_completion(completion)
@@ -236,7 +235,7 @@ class TheoryService:
         task.add_done_callback(self._prefetch_tasks.discard)
 
     async def _build_attempt_out(
-        self, attempt: EngineAttempt, *, lesson_id: str | None, locale: str
+        self, attempt: TheoryAttempt, *, lesson_id: str | None, locale: str
     ) -> AttemptOut:
         lesson_items = [item for item in attempt.items if item.phase == "LESSON"]
         retry_items = [item for item in attempt.items if item.phase == "RETRY"]
@@ -260,7 +259,7 @@ class TheoryService:
         )
 
     async def _hydrate_questions(
-        self, item_refs: list[EngineAttemptItemRef], *, locale: str, attempt_id: str
+        self, item_refs: list[TheoryAttemptItemRef], *, locale: str, attempt_id: str
     ) -> dict[str, BoostQuestion]:
         if not item_refs:
             return {}

@@ -103,35 +103,7 @@ def problem_payload(
     return {"status": status, "code": code, "detail": "upstream detail", "requestId": request_id}
 
 
-# --- fordona-engine (Plan §7.4) ----------------------------------------------
-
-
-def engine_envelope(response: Any) -> dict[str, Any]:
-    return {
-        "code": 200,
-        "status": "Success",
-        "message": "Operation Successful!",
-        "response": response,
-    }
-
-
-def engine_problem(
-    *,
-    status: int,
-    error_code: str,
-    detail: str = "A business rule was violated.",
-    type_path: str = "theory/lesson-locked",
-    instance: str = "/internal/theory/v1/x",
-) -> dict[str, Any]:
-    return {
-        "type": f"https://fordona.io/errors/{type_path}",
-        "title": "Theory Error",
-        "status": status,
-        "detail": detail,
-        "instance": instance,
-        "errorCode": error_code,
-        "correlationId": "cid-engine-1",
-    }
+# --- Theory backend payloads ------------------------------------------------
 
 
 def open_attempt_ref_payload(

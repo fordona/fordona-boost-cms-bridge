@@ -96,9 +96,10 @@ Each phase ends green (pytest, ruff, mypy) and is committed on its own.
   fails closed. `PlatformEventConsumer` pulls `GET /internal/learning/v1/events?after=` with the
   cursor in `platform_event_cursor` (migration 0007), behind an advisory lock;
   `subscription.changed`/`user.updated` clear the cache, `user.deleted` deletes learning data.
-- [x] **L7 Switch the public routes** (2026-11-09): `THEORY_BACKEND=local` (default) serves the
-  theory routes from `learning/backend.py`, a drop-in for the engine theory client; `engine` keeps
-  the legacy path for the mapping tests and a rollback. Journeys use Boost content and the
+- [x] **L7 Switch the public routes** (2026-11-09): the theory routes are served from
+  `learning/backend.py` (`LocalTheoryBackend`, behind the `TheoryBackend` protocol). The engine
+  theory client, `THEORY_BACKEND` and `ENGINE_PHASE_COMPLETE_TIMEOUT` were removed the same day;
+  the API tests use an in-memory backend (`tests/theory_backend.py`). Journeys use Boost content and the
   platform client. **Not yet ported**: the engine's admin endpoints (manual sync trigger, content
   report, retry-policy edits); the sync runs on its timer and policies are rows in `retry_policy`.
 - [x] **L8 Engine side** (2026-11-09, fordona-engine branch `feat/learning-platform-api`):
@@ -126,10 +127,12 @@ lesson attempt graded with the real answer keys through to the retry phase, and 
 
 ## Rollout
 
-1. Deploy fordona-engine first (new endpoints are additive; theory removal only matters once
-   fordona-connect no longer calls `/internal/theory/**`, which `THEORY_BACKEND=local` ensures).
-2. Deploy fordona-connect with `BOOST_GRADING_TOKEN`, `CONTENT_SYNC_INTERVAL_SECONDS` (e.g. 60),
-   `PLATFORM_EVENTS_INTERVAL_SECONDS` (e.g. 5) and `THEORY_BACKEND=local`. The first sync fills the
+1. Deploy fordona-engine first, from `feat/learning-platform-api`: an engine without it answers
+   `/internal/learning/**` with a bare 401 (it wants a JWT), which fordona-connect logs as
+   `engine_error_body_unparseable` with a hint. Its `THEORY_INTERNAL_TOKEN` must equal
+   fordona-connect's `ENGINE_INTERNAL_TOKEN` (a mismatch is a bare 403).
+2. Deploy fordona-connect with `BOOST_GRADING_TOKEN`, `CONTENT_SYNC_INTERVAL_SECONDS` (e.g. 60)
+   and `PLATFORM_EVENTS_INTERVAL_SECONDS` (e.g. 5). The first sync fills the
    content tables; until then lessons are empty.
 3. Learner history in the engine's old theory tables is not migrated (pre-launch: test data only).
 

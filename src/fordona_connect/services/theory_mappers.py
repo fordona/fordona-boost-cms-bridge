@@ -12,27 +12,27 @@ from pydantic import TypeAdapter
 
 from fordona_connect.cache.attempt_refs import ItemRef
 from fordona_connect.clients.boost.models import BoostQuestion, ContentBlock, QuestionOption
-from fordona_connect.clients.engine.theory import (
-    EngineAnswerFeedback,
-    EngineAttemptItemRef,
-    EngineAttemptPhaseCompletion,
-    EngineCompletionNext,
-    EngineCompletionProgress,
-    EngineHome,
-    EngineHomeContinue,
-    EngineHomeTabs,
-    EngineHomeUpNext,
-    EngineLearningPath,
-    EngineLessonLastResult,
-    EngineLessonOpenAttemptRef,
-    EngineLessonState,
-    EngineMockExamDetail,
-    EngineMockExamQuestionRef,
-    EngineMockExamSummary,
-    EnginePhaseSummary,
-    EngineReadiness,
-)
 from fordona_connect.core.errors import ContentNotFoundError
+from fordona_connect.learning.theory_models import (
+    TheoryAnswerFeedback,
+    TheoryAttemptItemRef,
+    TheoryAttemptPhaseCompletion,
+    TheoryCompletionNext,
+    TheoryCompletionProgress,
+    TheoryHome,
+    TheoryHomeContinue,
+    TheoryHomeTabs,
+    TheoryHomeUpNext,
+    TheoryLearningPath,
+    TheoryLessonLastResult,
+    TheoryLessonOpenAttemptRef,
+    TheoryLessonState,
+    TheoryMockExamDetail,
+    TheoryMockExamQuestionRef,
+    TheoryMockExamSummary,
+    TheoryPhaseSummary,
+    TheoryReadiness,
+)
 from fordona_connect.schemas.content_blocks import ContentBlockOut, TextBlockOut
 from fordona_connect.schemas.theory import (
     CompletionDailyChallengeOut,
@@ -97,7 +97,7 @@ def parse_explanation_blocks(raw: Any) -> list[ContentBlock]:
     return _EXPLANATION_ADAPTER.validate_python(raw)
 
 
-def map_open_attempt(ref: EngineLessonOpenAttemptRef | None) -> OpenAttemptOut | None:
+def map_open_attempt(ref: TheoryLessonOpenAttemptRef | None) -> OpenAttemptOut | None:
     if ref is None:
         return None
     return OpenAttemptOut(attempt_id=ref.attempt_id, phase=ref.phase)
@@ -106,7 +106,7 @@ def map_open_attempt(ref: EngineLessonOpenAttemptRef | None) -> OpenAttemptOut |
 # --- Home ----------------------------------------------------------------------
 
 
-def map_home(engine: EngineHome) -> HomeOut:
+def map_home(engine: TheoryHome) -> HomeOut:
     return HomeOut(
         user=HomeUserOut(initials=engine.user.initials, first_name=engine.user.first_name),
         week=HomeWeekOut(
@@ -145,7 +145,7 @@ def _map_streak(streak: Any) -> HomeStreakOut:
     )
 
 
-def _map_tabs(tabs: EngineHomeTabs) -> HomeTabsOut:
+def _map_tabs(tabs: TheoryHomeTabs) -> HomeTabsOut:
     return HomeTabsOut(
         learning_path=HomeTabStateOut(
             locked=tabs.learning_path.locked, lock_reason=tabs.learning_path.lock_reason
@@ -156,7 +156,7 @@ def _map_tabs(tabs: EngineHomeTabs) -> HomeTabsOut:
     )
 
 
-def _map_continue(card: EngineHomeContinue) -> HomeContinueOut:
+def _map_continue(card: TheoryHomeContinue) -> HomeContinueOut:
     return HomeContinueOut(
         kind=card.kind,
         unit_id=card.unit_id,
@@ -169,7 +169,7 @@ def _map_continue(card: EngineHomeContinue) -> HomeContinueOut:
     )
 
 
-def _map_up_next(entry: EngineHomeUpNext) -> HomeUpNextOut:
+def _map_up_next(entry: TheoryHomeUpNext) -> HomeUpNextOut:
     return HomeUpNextOut(
         kind=entry.kind,
         lesson_id=entry.lesson_id,
@@ -182,7 +182,7 @@ def _map_up_next(entry: EngineHomeUpNext) -> HomeUpNextOut:
 # --- Learning path -------------------------------------------------------------
 
 
-def map_learning_path(engine: EngineLearningPath) -> LearningPathOut:
+def map_learning_path(engine: TheoryLearningPath) -> LearningPathOut:
     # The engine's own iconUrl is always null today (no icon asset id exists yet
     # on LearningPathUnitDTO for the BFF to resolve) — passed through as-is
     # rather than invented, so there's nothing for this mapper to resolve.
@@ -218,14 +218,14 @@ def _map_entry(entry: Any) -> LearningPathEntryOut:
     )
 
 
-def _map_last_result(result: EngineLessonLastResult) -> LessonLastResultOut:
+def _map_last_result(result: TheoryLessonLastResult) -> LessonLastResultOut:
     return LessonLastResultOut(correct=result.correct, total=result.total)
 
 
 # --- Readiness -------------------------------------------------------------------
 
 
-def map_readiness(engine: EngineReadiness) -> ReadinessOut:
+def map_readiness(engine: TheoryReadiness) -> ReadinessOut:
     return ReadinessOut(
         percent=engine.percent,
         completed_lessons=engine.completed_lessons,
@@ -250,7 +250,7 @@ def map_readiness(engine: EngineReadiness) -> ReadinessOut:
 
 
 def map_lesson_detail(
-    state: EngineLessonState, *, lesson_id: str, title: str, theory: list[ContentBlockOut]
+    state: TheoryLessonState, *, lesson_id: str, title: str, theory: list[ContentBlockOut]
 ) -> LessonDetailOut:
     return LessonDetailOut(
         lesson_id=lesson_id,
@@ -267,12 +267,12 @@ def map_lesson_detail(
 # --- Attempt item hydration --------------------------------------------------------
 
 
-def item_refs_by_seq(item_refs: list[EngineAttemptItemRef]) -> dict[int, ItemRef]:
+def item_refs_by_seq(item_refs: list[TheoryAttemptItemRef]) -> dict[int, ItemRef]:
     return {ref.seq: ItemRef(question_id=ref.question_id, version=ref.version) for ref in item_refs}
 
 
 def hydrate_items(
-    item_refs: list[EngineAttemptItemRef],
+    item_refs: list[TheoryAttemptItemRef],
     questions: dict[str, BoostQuestion],
     resolver: AssetUrlResolver,
 ) -> list[ItemOut]:
@@ -349,7 +349,7 @@ def correct_option_content(
 
 
 def map_answer_feedback(
-    engine: EngineAnswerFeedback,
+    engine: TheoryAnswerFeedback,
     correct_option_content_blocks: list[ContentBlockOut],
     resolver: AssetUrlResolver,
 ) -> ResponseFeedbackOut:
@@ -370,13 +370,13 @@ def map_answer_feedback(
 # --- Phase completion ------------------------------------------------------------
 
 
-def _map_phase_summary(summary: EnginePhaseSummary | None) -> PhaseSummaryOut | None:
+def _map_phase_summary(summary: TheoryPhaseSummary | None) -> PhaseSummaryOut | None:
     if summary is None:
         return None
     return PhaseSummaryOut(total=summary.total, correct=summary.correct, wrong=summary.wrong)
 
 
-def _map_completion_next(next_: EngineCompletionNext | None) -> CompletionNextOut | None:
+def _map_completion_next(next_: TheoryCompletionNext | None) -> CompletionNextOut | None:
     if next_ is None:
         return None
     return CompletionNextOut(
@@ -390,7 +390,7 @@ def _map_completion_next(next_: EngineCompletionNext | None) -> CompletionNextOu
 
 
 def _map_completion_progress(
-    progress: EngineCompletionProgress | None,
+    progress: TheoryCompletionProgress | None,
 ) -> CompletionProgressOut | None:
     if progress is None:
         return None
@@ -407,7 +407,7 @@ def _map_completion_progress(
 
 
 def map_lesson_phase_completion(
-    engine: EngineAttemptPhaseCompletion, retry_items: list[ItemOut] | None
+    engine: TheoryAttemptPhaseCompletion, retry_items: list[ItemOut] | None
 ) -> LessonPhaseCompletionOut:
     retry = (
         RetryOut(total=engine.retry.total, items=retry_items or [])
@@ -424,7 +424,7 @@ def map_lesson_phase_completion(
     )
 
 
-def map_retry_phase_completion(engine: EngineAttemptPhaseCompletion) -> RetryPhaseCompletionOut:
+def map_retry_phase_completion(engine: TheoryAttemptPhaseCompletion) -> RetryPhaseCompletionOut:
     return RetryPhaseCompletionOut(
         attempt_id=engine.attempt_id,
         status=engine.status,
@@ -437,7 +437,7 @@ def map_retry_phase_completion(engine: EngineAttemptPhaseCompletion) -> RetryPha
 # --- Mock exams (read-only browsing, 2026-11-07 — no attempt/session tracking yet) ----------
 
 
-def map_mock_exam_summary(engine: EngineMockExamSummary) -> MockExamSummaryOut:
+def map_mock_exam_summary(engine: TheoryMockExamSummary) -> MockExamSummaryOut:
     return MockExamSummaryOut(
         mock_exam_id=engine.mock_exam_id,
         name=engine.name,
@@ -448,7 +448,7 @@ def map_mock_exam_summary(engine: EngineMockExamSummary) -> MockExamSummaryOut:
 
 
 def hydrate_mock_exam_questions(
-    item_refs: list[EngineMockExamQuestionRef],
+    item_refs: list[TheoryMockExamQuestionRef],
     questions: dict[str, BoostQuestion],
     resolver: AssetUrlResolver,
 ) -> list[MockExamQuestionOut]:
@@ -485,7 +485,7 @@ def hydrate_mock_exam_questions(
 
 
 def map_mock_exam_detail(
-    engine: EngineMockExamDetail, questions: list[MockExamQuestionOut]
+    engine: TheoryMockExamDetail, questions: list[MockExamQuestionOut]
 ) -> MockExamDetailOut:
     return MockExamDetailOut(
         mock_exam_id=engine.mock_exam_id,

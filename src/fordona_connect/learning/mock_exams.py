@@ -6,15 +6,15 @@ Questions are listed only while active, at their current revision.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fordona_connect.clients.engine.theory import (
-    EngineMockExamDetail,
-    EngineMockExamQuestionRef,
-    EngineMockExamSummary,
-)
 from fordona_connect.learning.content.models import ContentMockExam, ContentMockExamQuestion
 from fordona_connect.learning.content.snapshot import SnapshotProvider
 from fordona_connect.learning.errors import MockExamNotFoundError
 from fordona_connect.learning.progress.screens import title_in
+from fordona_connect.learning.theory_models import (
+    TheoryMockExamDetail,
+    TheoryMockExamQuestionRef,
+    TheoryMockExamSummary,
+)
 
 
 class MockExamService:
@@ -24,13 +24,13 @@ class MockExamService:
         self._sessionmaker = sessionmaker
         self._snapshots = snapshots
 
-    async def list(self, *, locale: str) -> list[EngineMockExamSummary]:
+    async def list(self, *, locale: str) -> list[TheoryMockExamSummary]:
         async with self._sessionmaker() as session:
             exams = await session.scalars(
                 select(ContentMockExam).order_by(ContentMockExam.mock_exam_id)
             )
             return [
-                EngineMockExamSummary(
+                TheoryMockExamSummary(
                     mock_exam_id=exam.mock_exam_id,
                     name=title_in(exam.name, locale),
                     description=title_in(exam.description, locale),
@@ -40,7 +40,7 @@ class MockExamService:
                 for exam in exams
             ]
 
-    async def detail(self, mock_exam_id: str, *, locale: str) -> EngineMockExamDetail:
+    async def detail(self, mock_exam_id: str, *, locale: str) -> TheoryMockExamDetail:
         snapshot = await self._snapshots.get()
         async with self._sessionmaker() as session:
             exam = await session.get(ContentMockExam, mock_exam_id)
@@ -52,13 +52,13 @@ class MockExamService:
                 .order_by(ContentMockExamQuestion.sort)
             )
             items = [
-                EngineMockExamQuestionRef(
+                TheoryMockExamQuestionRef(
                     question_id=question.question_id, version=question.version
                 )
                 for question_id in question_ids
                 if (question := snapshot.question(question_id)) is not None
             ]
-        return EngineMockExamDetail(
+        return TheoryMockExamDetail(
             mock_exam_id=exam.mock_exam_id,
             name=title_in(exam.name, locale),
             description=title_in(exam.description, locale),

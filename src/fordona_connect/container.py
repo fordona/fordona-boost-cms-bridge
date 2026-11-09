@@ -13,7 +13,6 @@ from fordona_connect.clients.boost.client import BoostClient
 from fordona_connect.clients.boost.client import create_http_client as create_boost_http_client
 from fordona_connect.clients.engine.client import EngineClient
 from fordona_connect.clients.engine.client import create_http_client as create_engine_http_client
-from fordona_connect.clients.engine.theory import EngineTheoryClient
 from fordona_connect.core.config import SUPPORTED_LOCALES, Settings
 from fordona_connect.core.security import JwksCache, TokenVerifier
 from fordona_connect.db.session import create_engine, create_sessionmaker, ping
@@ -107,13 +106,7 @@ async def build_services(settings: Settings) -> AsyncIterator[Services]:
         progress=ProgressService(db_sessionmaker),
         summaries=screens,
     )
-    backend: LocalTheoryBackend | EngineTheoryClient = (
-        LocalTheoryBackend(attempts, screens, MockExamService(db_sessionmaker, snapshots))
-        if settings.theory_backend == "local"
-        else EngineTheoryClient(
-            raw_engine_client, phase_complete_timeout=settings.engine_phase_complete_timeout
-        )
-    )
+    backend = LocalTheoryBackend(attempts, screens, MockExamService(db_sessionmaker, snapshots))
 
     prefetch_gate: ReleasePrefetchGate | None = None
     prefetch_runner: ReleasePrefetchRunner | None = None

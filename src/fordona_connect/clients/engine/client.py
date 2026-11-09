@@ -1,14 +1,10 @@
-"""Async client for fordona-engine's internal theory API (``/internal/theory/v1/**``).
+"""Async client for fordona-engine's internal learning API (``/internal/learning/v1/**``).
 
-Plan §7.4: forwards the learner's own verified JWT (never a service token —
-the engine derives the learner from it and only it), the shared
-``X-Fordona-Internal-Token``, whatever ``Accept-Language``/``X-Timezone`` the
-caller supplies, and the correlation id. Unwraps ``Payload<T>``. Never raises
-a raw ``httpx`` exception: an engine RFC 7807 error surfaces as
-``EnginePassthroughError`` with the engine's own fields unchanged; anything
-else (timeout, connection failure, an unparseable body) becomes one of the
-existing ``Upstream*Error``s Boost failures already resolve to, so a route
-needs no engine-specific exception handling beyond what it already has.
+Service-to-service only: every call carries the shared ``X-Fordona-Internal-Token``
+and the correlation id, never a learner JWT, so it also works from background jobs.
+Unwraps ``Payload<T>``. Never raises a raw ``httpx`` exception: an engine RFC 7807
+error surfaces as ``EnginePassthroughError`` with the engine's own fields; anything
+else (timeout, connection failure, an unparseable body) becomes an ``Upstream*Error``.
 """
 
 from dataclasses import dataclass
@@ -20,11 +16,7 @@ from pydantic import ValidationError
 from fordona_connect.clients.engine.errors import EnginePassthroughError
 from fordona_connect.clients.engine.models import EnginePayload, EngineProblem
 from fordona_connect.core.config import Settings
-from fordona_connect.core.context import (
-    CORRELATION_ID_HEADER,
-    get_correlation_id,
-    learner_token_var,
-)
+from fordona_connect.core.context import CORRELATION_ID_HEADER, get_correlation_id
 from fordona_connect.core.errors import (
     AppError,
     UpstreamMisconfiguredError,
@@ -36,14 +28,20 @@ log = get_logger(__name__)
 
 INTERNAL_TOKEN_HEADER = "X-Fordona-Internal-Token"  # noqa: S105 - a header name, not a secret
 
+# What a bare (non-RFC 7807) engine rejection usually means.
+_HINTS = {
+    401: "the engine asked for a JWT: it does not permit /internal/learning/** yet "
+    "(deploy the engine's learning platform API)",
+    403: "the engine rejected X-Fordona-Internal-Token: ENGINE_INTERNAL_TOKEN here must "
+    "equal the engine's THEORY_INTERNAL_TOKEN",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class EngineResponse:
-    """One unwrapped engine call. ``data`` is ``Payload<T>.response``, ``None`` on a 304."""
+    """One unwrapped engine call. ``data`` is ``Payload<T>.response``."""
 
     data: Any
-    etag: str | None
-    not_modified: bool
 
 
 def create_http_client(settings: Settings) -> httpx.AsyncClient:
@@ -82,72 +80,15 @@ class EngineClient:
             default_timeout=settings.engine_read_timeout,
         )
 
-    async def get(
-        self,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        accept_language: str | None = None,
-        timezone: str | None = None,
-        if_none_match: str | None = None,
-        timeout_override: float | None = None,
-    ) -> EngineResponse:
-        headers = self._headers(accept_language, timezone)
-        if if_none_match:
-            headers["If-None-Match"] = if_none_match
-        response = await self._send(
-            "GET", path, headers=headers, params=params, timeout_override=timeout_override
-        )
-        if response.status_code == 304:
-            return EngineResponse(data=None, etag=response.headers.get("ETag"), not_modified=True)
-        return self._unwrap(response, path)
-
     async def get_as_service(
         self, path: str, *, params: dict[str, str] | None = None
     ) -> EngineResponse:
-        """A service-to-service call (``/internal/learning/**``): the internal token
-        only, no learner JWT, so it works outside a request (background jobs)."""
+        """A service-to-service GET: the internal token only, no learner JWT."""
         headers = {INTERNAL_TOKEN_HEADER: self._internal_token}
         if correlation_id := get_correlation_id():
             headers[CORRELATION_ID_HEADER] = correlation_id
         response = await self._send("GET", path, headers=headers, params=params)
         return self._unwrap(response, path)
-
-    async def post(
-        self,
-        path: str,
-        *,
-        json: Any = None,
-        accept_language: str | None = None,
-        timezone: str | None = None,
-        timeout_override: float | None = None,
-    ) -> EngineResponse:
-        headers = self._headers(accept_language, timezone)
-        response = await self._send(
-            "POST", path, headers=headers, json=json, timeout_override=timeout_override
-        )
-        return self._unwrap(response, path)
-
-    def _headers(self, accept_language: str | None, timezone: str | None) -> dict[str, str]:
-        headers = {
-            INTERNAL_TOKEN_HEADER: self._internal_token,
-            "Authorization": f"Bearer {self._credential()}",
-        }
-        if accept_language:
-            headers["Accept-Language"] = accept_language
-        if timezone:
-            headers["X-Timezone"] = timezone
-        if correlation_id := get_correlation_id():
-            headers[CORRELATION_ID_HEADER] = correlation_id
-        return headers
-
-    def _credential(self) -> str:
-        learner_token = learner_token_var.get()
-        if not learner_token:
-            # Programming error: an engine call outside an authenticated request.
-            log.error("engine_no_credential")
-            raise UpstreamMisconfiguredError("No learner token available to forward to the engine")
-        return learner_token
 
     async def _send(
         self,
@@ -156,28 +97,19 @@ class EngineClient:
         *,
         headers: dict[str, str],
         params: dict[str, str] | None = None,
-        json: Any = None,
-        timeout_override: float | None = None,
     ) -> httpx.Response:
-        request_timeout = (
-            timeout_override if timeout_override is not None else self._default_timeout
-        )
+        request_timeout = self._default_timeout
         try:
             return await self._http.request(
                 method,
                 path,
                 headers=headers,
                 params=params,
-                json=json,
                 timeout=httpx.Timeout(request_timeout),
             )
         except httpx.TimeoutException as exc:
-            # Plan §7.4: "an engine outage → 503 UPSTREAM_UNAVAILABLE" — a timeout and a
-            # connection failure both mean no response ever arrived (no RFC 7807 body to
-            # pass through either), so both resolve the same way for this client. Unlike
-            # Boost's client, the engine client never distinguishes them as a separate
-            # retryable-timeout case: the engine client doesn't retry at all (P6.T2 has
-            # no retry requirement, unlike Boost's).
+            # A timeout and a connection failure both mean no response arrived; the
+            # engine client does not retry.
             log.warning("engine_timeout", path=path, timeout=request_timeout)
             raise UpstreamUnavailableError() from exc
         except httpx.TransportError as exc:
@@ -194,9 +126,7 @@ class EngineClient:
             raise UpstreamUnavailableError(
                 "The engine returned a payload that could not be parsed"
             ) from exc
-        return EngineResponse(
-            data=payload.response, etag=response.headers.get("ETag"), not_modified=False
-        )
+        return EngineResponse(data=payload.response)
 
     def _classify_error(self, response: httpx.Response, path: str) -> AppError:
         try:
@@ -216,7 +146,12 @@ class EngineClient:
             if response.status_code >= 500:
                 log.warning("engine_unavailable", path=path, status=response.status_code)
                 return UpstreamUnavailableError()
-            log.error("engine_error_body_unparseable", path=path, status=response.status_code)
+            log.error(
+                "engine_error_body_unparseable",
+                path=path,
+                status=response.status_code,
+                hint=_HINTS.get(response.status_code),
+            )
             return UpstreamMisconfiguredError(
                 f"Engine {response.status_code} for {path} returned no parseable error body"
             )
