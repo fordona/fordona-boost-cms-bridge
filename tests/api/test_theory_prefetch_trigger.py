@@ -7,15 +7,13 @@ import asyncio
 
 import respx
 
-from tests.conftest import BOOST, ENGINE, Harness
-from tests.factories import engine_envelope, home_payload, lesson_payload, page_payload
+from tests.conftest import BOOST, Harness
+from tests.factories import home_payload, lesson_payload, page_payload
 
 
 @respx.mock
 async def test_prefetch_disabled_by_default_makes_no_catalogue_calls(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/home").respond(
-        json=engine_envelope(home_payload())
-    )
+    harness.theory.set("get_home", home_payload())
     lessons_route = harness.boost.get(f"{BOOST}/v1/delivery/lessons")
 
     response = await harness.client.get("/v1/home", headers=harness.auth())
@@ -33,9 +31,7 @@ async def test_prefetch_enabled_warms_the_catalogue_once_per_release(
         content_prefetch_on_release=True, content_prefetch_batch_delay_seconds=0
     ) as harness:
         harness: Harness
-        harness.engine.get(f"{ENGINE}/internal/theory/v1/home").respond(
-            json=engine_envelope(home_payload())
-        )
+        harness.theory.set("get_home", home_payload())
         lessons_route = harness.boost.get(f"{BOOST}/v1/delivery/lessons").respond(
             json=page_payload([lesson_payload(lesson_id="10")], page_size=250)
         )

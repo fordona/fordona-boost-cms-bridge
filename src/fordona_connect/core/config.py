@@ -95,9 +95,6 @@ class Settings(BaseSettings):
     content_page_size: int = Field(default=250, ge=1, le=1000)
 
     # --- Learning ------------------------------------------------------------
-    # Who serves the theory routes: this service's own learning modules ("local"), or
-    # fordona-engine's legacy internal theory API ("engine", until it is removed).
-    theory_backend: Literal["local", "engine"] = "local"
     # Question selection for a lesson attempt: the lesson's whole active-question bank
     # ("lesson-bank-v1"), or the linked learning-journey challenge's quiz ("challenge-v1").
     theory_selection_strategy: Literal["lesson-bank-v1", "challenge-v1"] = "lesson-bank-v1"
@@ -117,11 +114,10 @@ class Settings(BaseSettings):
 
     # --- Engine (fordona-engine, internal API) ------------------------------
     engine_base_url: AnyHttpUrl = AnyHttpUrl("http://engine.internal:8080")
-    # Required outside "local" (Plan §7.4, PA DD-04) — the engine checks this same
-    # value as X-Fordona-Internal-Token on every /internal/theory/** call.
+    # Required outside "local". The engine checks this same value (its
+    # THEORY_INTERNAL_TOKEN) as X-Fordona-Internal-Token on every /internal/learning/** call.
     engine_internal_token: SecretStr = SecretStr("")
     engine_read_timeout: float = Field(default=2.0, gt=0)
-    engine_phase_complete_timeout: float = Field(default=5.0, gt=0)
     engine_pool_max_connections: int = Field(default=20, ge=1)
 
     # --- Boost batching / prefetch ------------------------------------------

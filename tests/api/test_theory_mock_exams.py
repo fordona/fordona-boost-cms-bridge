@@ -2,8 +2,9 @@
 
 import respx
 
-from tests.conftest import BOOST, ENGINE, Harness
-from tests.factories import engine_envelope, engine_problem, question_payload
+from fordona_connect.learning.errors import MockExamNotFoundError
+from tests.conftest import BOOST, Harness
+from tests.factories import question_payload
 
 
 def _mock_exam_summary(**overrides: object) -> dict[str, object]:
@@ -18,12 +19,10 @@ def _mock_exam_summary(**overrides: object) -> dict[str, object]:
     return payload
 
 
-@respx.mock
-async def test_list_mock_exams_returns_the_engines_summaries(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/mock-exams").respond(
-        json=engine_envelope(
-            [_mock_exam_summary(), _mock_exam_summary(mockExamId="2", name="Exam B")]
-        )
+async def test_list_mock_exams_returns_the_backend_summaries(harness: Harness) -> None:
+    harness.theory.set(
+        "list_mock_exams",
+        [_mock_exam_summary(), _mock_exam_summary(mockExamId="2", name="Exam B")],
     )
 
     response = await harness.client.get("/v1/mock-exams", headers=harness.auth())
@@ -37,13 +36,9 @@ async def test_list_mock_exams_returns_the_engines_summaries(harness: Harness) -
 
 @respx.mock
 async def test_get_mock_exam_hydrates_each_question_from_boost(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/mock-exams/1").respond(
-        json=engine_envelope(
-            {
-                **_mock_exam_summary(),
-                "items": [{"questionId": "100", "version": "5"}],
-            }
-        )
+    harness.theory.set(
+        "get_mock_exam",
+        {**_mock_exam_summary(), "items": [{"questionId": "100", "version": "5"}]},
     )
     harness.boost.get(f"{BOOST}/v1/delivery/questions/100/revisions/5").respond(
         json=question_payload(question_id="100")
@@ -62,16 +57,8 @@ async def test_get_mock_exam_hydrates_each_question_from_boost(harness: Harness)
     assert "questionId" not in body["questions"][0]
 
 
-@respx.mock
-async def test_get_mock_exam_unknown_id_passes_through_engine_404(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/mock-exams/999").respond(
-        404,
-        json=engine_problem(
-            status=404,
-            error_code="THEORY_MOCK_EXAM_NOT_FOUND",
-            type_path="theory/mock-exam-not-found",
-        ),
-    )
+async def test_get_mock_exam_unknown_id_is_404(harness: Harness) -> None:
+    harness.theory.set("get_mock_exam", MockExamNotFoundError("Mock exam not found: 999"))
 
     response = await harness.client.get("/v1/mock-exams/999", headers=harness.auth())
 

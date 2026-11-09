@@ -2,14 +2,15 @@
 
 import respx
 
-from tests.conftest import BOOST, ENGINE, Harness
-from tests.factories import engine_envelope, engine_problem, lesson_payload, lesson_state_payload
+from fordona_connect.learning.errors import LessonNotFoundError
+from tests.conftest import BOOST, Harness
+from tests.factories import lesson_payload, lesson_state_payload
 
 
 @respx.mock
 async def test_locked_lesson_is_403_and_never_calls_boost(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/lessons/14").respond(
-        json=engine_envelope(lesson_state_payload(locked=True, lockReason="THEORY_LESSON_LOCKED"))
+    harness.theory.set(
+        "get_lesson_state", lesson_state_payload(locked=True, lockReason="THEORY_LESSON_LOCKED")
     )
 
     response = await harness.client.get("/v1/lessons/14", headers=harness.auth())
@@ -19,12 +20,10 @@ async def test_locked_lesson_is_403_and_never_calls_boost(harness: Harness) -> N
     assert not [c for c in harness.boost.calls if c.request.url.host == "boost.test"]
 
 
-@respx.mock
 async def test_module_locked_lesson_is_403_with_module_locked_code(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/lessons/21").respond(
-        json=engine_envelope(
-            lesson_state_payload(locked=True, lockReason="THEORY_ATTEMPT_MODULE_LOCKED")
-        )
+    harness.theory.set(
+        "get_lesson_state",
+        lesson_state_payload(locked=True, lockReason="THEORY_ATTEMPT_MODULE_LOCKED"),
     )
 
     response = await harness.client.get("/v1/lessons/21", headers=harness.auth())
@@ -35,9 +34,7 @@ async def test_module_locked_lesson_is_403_with_module_locked_code(harness: Harn
 
 @respx.mock
 async def test_unlocked_lesson_renders_theory_blocks_from_boost(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/lessons/14").respond(
-        json=engine_envelope(lesson_state_payload())
-    )
+    harness.theory.set("get_lesson_state", lesson_state_payload())
     payload = lesson_payload(lesson_id="14")
     payload["translation"]["blocks"] = [{"type": "text", "markdown": "Welcome"}]
     harness.boost.get(f"{BOOST}/v1/delivery/lessons/14").respond(json=payload)
@@ -49,6 +46,8 @@ async def test_unlocked_lesson_renders_theory_blocks_from_boost(harness: Harness
     assert body["questionCount"] == 8
     assert body["theory"] == [{"type": "text", "markdown": "Welcome"}]
     assert body["title"] == "Väjningsplikt"
+    [call] = harness.theory.calls_to("get_lesson_state")
+    assert call.args == ("14",)
 
 
 @respx.mock
@@ -59,9 +58,7 @@ async def test_unlocked_lesson_renders_theory_from_legacy_content_html(
     Boost lessons never carry ``translation.blocks``, only legacy ``contentHtml`` —
     ``lesson_payload()``'s default shape (no ``blocks`` override) models exactly that.
     Before this fix, ``theory`` rendered as ``[]`` for every real lesson."""
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/lessons/14").respond(
-        json=engine_envelope(lesson_state_payload())
-    )
+    harness.theory.set("get_lesson_state", lesson_state_payload())
     harness.boost.get(f"{BOOST}/v1/delivery/lessons/14").respond(
         json=lesson_payload(lesson_id="14")
     )
@@ -73,16 +70,8 @@ async def test_unlocked_lesson_renders_theory_from_legacy_content_html(
     assert body["theory"] == [{"type": "text", "markdown": "Lektionstext"}]
 
 
-@respx.mock
-async def test_unknown_lesson_passes_through_engine_404(harness: Harness) -> None:
-    harness.engine.get(f"{ENGINE}/internal/theory/v1/lessons/999").respond(
-        404,
-        json=engine_problem(
-            status=404,
-            error_code="THEORY_ATTEMPT_LESSON_NOT_FOUND",
-            type_path="theory/lesson-not-found",
-        ),
-    )
+async def test_unknown_lesson_is_404(harness: Harness) -> None:
+    harness.theory.set("get_lesson_state", LessonNotFoundError("Lesson not found: 999"))
 
     response = await harness.client.get("/v1/lessons/999", headers=harness.auth())
 

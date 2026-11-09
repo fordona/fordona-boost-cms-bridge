@@ -3,14 +3,14 @@
 import pytest
 
 from fordona_connect.clients.boost.models import BoostQuestion
-from fordona_connect.clients.engine.theory import (
-    EngineAttemptItemRef,
-    EngineHome,
-    EngineHomeTabs,
-    EngineHomeTabState,
-    EngineHomeUser,
-)
 from fordona_connect.core.errors import ContentNotFoundError
+from fordona_connect.learning.theory_models import (
+    TheoryAttemptItemRef,
+    TheoryHome,
+    TheoryHomeTabs,
+    TheoryHomeTabState,
+    TheoryHomeUser,
+)
 from fordona_connect.services import theory_mappers as mappers
 from fordona_connect.services.media import AssetUrlResolver, PlainUrlSigner
 from tests.factories import question_payload
@@ -28,15 +28,15 @@ def _question(question_id: str = "100") -> BoostQuestion:
 
 
 def test_map_home_with_partial_failure_leaves_continue_and_tabs_populated() -> None:
-    engine_home = EngineHome(
-        user=EngineHomeUser(initials="SI", first_name="Samira"),
+    engine_home = TheoryHome(
+        user=TheoryHomeUser(initials="SI", first_name="Samira"),
         week=None,
         daily_challenge=None,
         streak=None,
         readiness=None,
-        tabs=EngineHomeTabs(
-            learning_path=EngineHomeTabState(locked=False, lock_reason=None),
-            mock_exams=EngineHomeTabState(locked=True, lock_reason="NOT_AVAILABLE"),
+        tabs=TheoryHomeTabs(
+            learning_path=TheoryHomeTabState(locked=False, lock_reason=None),
+            mock_exams=TheoryHomeTabState(locked=True, lock_reason="NOT_AVAILABLE"),
         ),
         learning_path_etag='"42"',
     )
@@ -53,7 +53,7 @@ def test_map_home_with_partial_failure_leaves_continue_and_tabs_populated() -> N
 
 def test_hydrate_items_orders_options_with_display_labels() -> None:
     question = _question(question_id="100")
-    ref = EngineAttemptItemRef(
+    ref = TheoryAttemptItemRef(
         seq=1,
         phase="LESSON",
         question_id="100",
@@ -74,7 +74,7 @@ def test_hydrate_items_renders_prompt_from_legacy_question_text() -> None:
     legacy ``questionText`` — ``question_payload()`` already models that (no ``prompt``
     key), so this is the exact shape every real question arrives in."""
     question = _question(question_id="100")
-    ref = EngineAttemptItemRef(
+    ref = TheoryAttemptItemRef(
         seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
     )
 
@@ -88,7 +88,7 @@ def test_hydrate_items_appends_media_image_to_a_legacy_prompt() -> None:
     real sign-recognition question ("what does this sign mean?") silently lost its
     image. ``question_payload()``'s default shape already carries one."""
     question = _question(question_id="100")
-    ref = EngineAttemptItemRef(
+    ref = TheoryAttemptItemRef(
         seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
     )
 
@@ -99,7 +99,7 @@ def test_hydrate_items_appends_media_image_to_a_legacy_prompt() -> None:
 
 
 def test_hydrate_items_raises_when_question_missing_from_cache() -> None:
-    ref = EngineAttemptItemRef(
+    ref = TheoryAttemptItemRef(
         seq=1, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
     )
 
@@ -109,7 +109,7 @@ def test_hydrate_items_raises_when_question_missing_from_cache() -> None:
 
 def test_hydrate_items_raises_when_option_order_references_unknown_option() -> None:
     question = _question(question_id="100")
-    ref = EngineAttemptItemRef(
+    ref = TheoryAttemptItemRef(
         seq=1,
         phase="LESSON",
         question_id="100",
@@ -124,7 +124,7 @@ def test_hydrate_items_raises_when_option_order_references_unknown_option() -> N
 
 def test_hydrate_items_marks_answered_items() -> None:
     question = _question(question_id="100")
-    ref = EngineAttemptItemRef(
+    ref = TheoryAttemptItemRef(
         seq=1,
         phase="LESSON",
         question_id="100",
@@ -154,7 +154,7 @@ def test_correct_option_content_raises_for_unknown_key() -> None:
 
 
 def test_item_refs_by_seq_maps_question_and_version() -> None:
-    ref = EngineAttemptItemRef(
+    ref = TheoryAttemptItemRef(
         seq=3, phase="LESSON", question_id="100", version="5", option_order=["a"], answered=None
     )
 
@@ -174,7 +174,7 @@ def test_parse_explanation_blocks_tolerates_unknown_type() -> None:
 
 def test_parse_explanation_blocks_converts_a_real_boost_html_string() -> None:
     """Confirmed 2026-11-06 against live boost-api-dev.fordona.dev: the engine forwards
-    a plain HTML string for real Boost content (``EngineAnswerFeedback.explanation`` is
+    a plain HTML string for real Boost content (``TheoryAnswerFeedback.explanation`` is
     untyped precisely because of this). Before this fix, passing a ``str`` straight to
     the ``list[ContentBlock]`` TypeAdapter raised ``ValidationError`` — every real
     "Check Answer" response would 500."""
