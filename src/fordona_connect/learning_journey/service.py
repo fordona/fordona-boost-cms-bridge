@@ -4,16 +4,12 @@ idempotency, option shuffling, next-challenge computation.
 Depends on ``LearningJourneyRepository`` through plain duck-typing (constructor
 injection) so tests can substitute an in-memory fake without a formal interface.
 
-**Entitlement is the one deliberate exception to this feature's BFF-only isolation**:
-the free tier is "the first milestone, all its challenges"; everything past it needs
-an active subscription, and subscription state lives only in fordona-engine. Rather
-than duplicating that state here, ``LearningJourneyService`` calls the engine's own
-existing *public* ``GET /v1/theory/subscription/status`` endpoint (forwarding the
-learner's own JWT — the same ``forward_learner_token`` pattern already used for
-Boost), via the same ``EngineClient`` the theory module already uses. A failed or
-unreachable entitlement check **fails closed** (treated as not entitled) — a paywall
-that silently opens on an engine hiccup is a worse bug than one that's briefly too
-strict.
+Content (journey structure, quizzes, question bodies) comes from Boost through
+``content.JourneyContentSource``; learner state from ``LearningJourneyRepository``.
+The free tier is the journey's first milestone; everything past it needs an active
+subscription, a platform fact read through ``SubscriptionSource``. A failed
+subscription check **fails closed**: a paywall that opens on an engine hiccup is a
+worse bug than one that is briefly too strict.
 """
 
 import hashlib
@@ -25,9 +21,10 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fordona_connect.clients.engine.client import EngineClient
 from fordona_connect.core.errors import AppError
 from fordona_connect.core.logging import get_logger
+from fordona_connect.learning.entitlement import SubscriptionSource
+from fordona_connect.learning_journey.content import JourneyContentSource
 from fordona_connect.learning_journey.errors import (
     ActiveAttemptExistsError,
     AnswerAlreadyFinalizedError,
@@ -92,16 +89,10 @@ from fordona_connect.learning_journey.schemas import (
     WeekDay,
 )
 
-_JOURNEY_ID = "journey_001"
 _MAX_MANDATORY_REMEDIATION_ROUNDS = 1
 # Hardcoded — no daily-challenge configuration exists anywhere; matches the mobile
 # mockup's "Complete 3 Lessons" literally. "Lessons" here means challenges.
 _DAILY_CHALLENGE_TARGET = 3
-# The free tier: this milestone and all its challenges, no subscription needed.
-# Confirmed against the seed: every challenge in ms_001 is currently MISSING_MEDIA,
-# so the free tier is unattemptable end-to-end until real media lands — a content
-# gap, not a bug in this gate.
-_FREE_MILESTONE_ID = "ms_001"
 
 log = get_logger(__name__)
 
@@ -119,12 +110,14 @@ class LearningJourneyService:
     def __init__(
         self,
         repository: LearningJourneyRepository,
-        engine_client: EngineClient,
+        content: JourneyContentSource,
+        subscriptions: SubscriptionSource,
         *,
         now_fn: Callable[[], datetime] | None = None,
     ) -> None:
         self._repo = repository
-        self._engine = engine_client
+        self._content = content
+        self._subscriptions = subscriptions
         self._now = now_fn or (lambda: datetime.now(UTC))
 
     @staticmethod
@@ -133,13 +126,18 @@ class LearningJourneyService:
 
     # --- Entitlement -----------------------------------------------------------
 
-    @staticmethod
-    def _is_free_milestone(milestone_id: str) -> bool:
-        return milestone_id == _FREE_MILESTONE_ID
+    async def _journey_id(self) -> str:
+        journey_id = await self._content.journey_id()
+        if journey_id is None:
+            raise NotFoundError("No learning journey is published.")
+        return journey_id
+
+    async def _is_free_milestone(self, milestone_id: str) -> bool:
+        return milestone_id == await self._content.free_milestone_id()
 
     async def _is_subscribed(self, app_user_id: str) -> bool:
         try:
-            response = await self._engine.get("/v1/theory/subscription/status")
+            return await self._subscriptions.is_subscribed(app_user_id)
         except AppError as exc:
             log.warning(
                 "learning_journey_entitlement_check_failed_closed",
@@ -147,10 +145,9 @@ class LearningJourneyService:
                 error=repr(exc),
             )
             return False
-        return bool(response.data.get("isActive", False))
 
     async def _assert_entitled(self, app_user_id: str, milestone_id: str) -> None:
-        if self._is_free_milestone(milestone_id):
+        if await self._is_free_milestone(milestone_id):
             return
         if not await self._is_subscribed(app_user_id):
             raise SubscriptionRequiredError()
@@ -158,18 +155,19 @@ class LearningJourneyService:
     # --- Assignment bootstrap ------------------------------------------------
 
     async def _ensure_assignment(self, app_user_id: str) -> str:
-        template = await self._repo.get_journey_template(_JOURNEY_ID)
-        if template is None:  # pragma: no cover - seed always present
-            raise NotFoundError("No learning journey is configured.")
-        milestones = await self._repo.list_milestones(_JOURNEY_ID)
+        journey_id = await self._journey_id()
+        template = await self._content.get_journey_template(journey_id)
+        if template is None:
+            raise NotFoundError("No learning journey is published.")
+        milestones = await self._content.list_milestones(journey_id)
         challenge_ids: list[str] = []
         for milestone in milestones:
-            challenges = await self._repo.list_challenges_for_milestone(milestone.milestone_id)
+            challenges = await self._content.list_challenges_for_milestone(milestone.milestone_id)
             challenge_ids.extend(c.challenge_id for c in challenges)
 
         assignment = await self._repo.ensure_assignment(
             app_user_id=app_user_id,
-            journey_id=_JOURNEY_ID,
+            journey_id=journey_id,
             journey_version=template.version,
             assignment_id=f"assignment_{hashlib.sha256(app_user_id.encode()).hexdigest()[:24]}",
             challenge_ids=challenge_ids,
@@ -219,9 +217,11 @@ class LearningJourneyService:
 
     async def get_learning_journey(self, app_user_id: str) -> LearningJourneyOut:
         assignment_id = await self._ensure_assignment(app_user_id)
-        template = await self._repo.get_journey_template(_JOURNEY_ID)
+        journey_id = await self._journey_id()
+        template = await self._content.get_journey_template(journey_id)
         assert template is not None
-        milestones = await self._repo.list_milestones(_JOURNEY_ID)
+        milestones = await self._content.list_milestones(journey_id)
+        free_milestone_id = await self._content.free_milestone_id()
         progress_by_challenge = await self._repo.list_progress(assignment_id)
         subscribed = await self._is_subscribed(app_user_id)
 
@@ -233,7 +233,7 @@ class LearningJourneyService:
         previous_milestone_complete = True
 
         for milestone in milestones:
-            challenges = await self._repo.list_challenges_for_milestone(milestone.milestone_id)
+            challenges = await self._content.list_challenges_for_milestone(milestone.milestone_id)
             completed = sum(
                 1 for c in challenges if progress_by_challenge[c.challenge_id].status == "COMPLETED"
             )
@@ -244,7 +244,7 @@ class LearningJourneyService:
                 if completed == total and total > 0
                 else ("IN_PROGRESS" if completed > 0 else "NOT_STARTED")
             )
-            not_entitled = not subscribed and not self._is_free_milestone(milestone.milestone_id)
+            not_entitled = not subscribed and milestone.milestone_id != free_milestone_id
             is_locked = not_entitled or not previous_milestone_complete
             if not_entitled:
                 reason = "SUBSCRIPTION_REQUIRED"
@@ -313,15 +313,15 @@ class LearningJourneyService:
 
     async def get_milestone_detail(self, app_user_id: str, milestone_id: str) -> MilestoneDetailOut:
         assignment_id = await self._ensure_assignment(app_user_id)
-        milestone = await self._repo.get_milestone(milestone_id)
-        if milestone is None or milestone.journey_id != _JOURNEY_ID:
+        milestone = await self._content.get_milestone(milestone_id)
+        if milestone is None or milestone.journey_id != await self._journey_id():
             raise NotFoundError("Milestone not found.")
 
         progress_by_challenge = await self._repo.list_progress(assignment_id)
-        challenges = await self._repo.list_challenges_for_milestone(milestone_id)
-        not_entitled = not self._is_free_milestone(milestone_id) and not await self._is_subscribed(
-            app_user_id
-        )
+        challenges = await self._content.list_challenges_for_milestone(milestone_id)
+        not_entitled = not await self._is_free_milestone(
+            milestone_id
+        ) and not await self._is_subscribed(app_user_id)
 
         challenge_outs: list[ChallengeSummaryOut] = []
         previous_complete = True
@@ -419,7 +419,7 @@ class LearningJourneyService:
     async def _assert_challenge_unlocked(self, assignment_id: str, challenge: Any) -> None:
         if challenge.position <= 1:
             return
-        siblings = await self._repo.list_challenges_for_milestone(challenge.milestone_id)
+        siblings = await self._content.list_challenges_for_milestone(challenge.milestone_id)
         previous = next((c for c in siblings if c.position == challenge.position - 1), None)
         if previous is None:
             return
@@ -431,13 +431,13 @@ class LearningJourneyService:
 
     async def get_challenge_detail(self, app_user_id: str, challenge_id: str) -> ChallengeDetailOut:
         assignment_id = await self._ensure_assignment(app_user_id)
-        challenge = await self._repo.get_challenge(challenge_id)
+        challenge = await self._content.get_challenge(challenge_id)
         if challenge is None:
             raise NotFoundError("Challenge not found.")
         await self._assert_challenge_unlocked(assignment_id, challenge)
         await self._assert_entitled(app_user_id, challenge.milestone_id)
 
-        questions = await self._repo.list_questions_for_challenge(challenge_id)
+        questions = await self._content.list_questions_for_challenge(challenge_id)
         progress = await self._repo.get_progress(
             assignment_id=assignment_id, challenge_id=challenge_id
         )
@@ -569,7 +569,7 @@ class LearningJourneyService:
     ) -> tuple[int, dict[str, Any]]:
         async def compute() -> tuple[int, dict[str, Any]]:
             assignment_id = await self._ensure_assignment(app_user_id)
-            challenge = await self._repo.get_challenge(challenge_id)
+            challenge = await self._content.get_challenge(challenge_id)
             if challenge is None:
                 raise NotFoundError("Challenge not found.")
             await self._assert_challenge_unlocked(assignment_id, challenge)
@@ -604,7 +604,7 @@ class LearningJourneyService:
             else:  # pragma: no cover - schema already restricts the literal
                 raise ValidationError(f"Unknown mode {mode!r}.")
 
-            questions = await self._repo.list_questions_for_challenge(challenge_id)
+            questions = await self._content.list_questions_for_challenge(challenge_id)
             now = self._now()
             attempt_id = _new_id("att")
             session_type = "PROGRESSION" if mode == "INITIAL" else "PRACTICE"
@@ -759,7 +759,7 @@ class LearningJourneyService:
         attempt = await self._repo.get_attempt(attempt_id)
         if attempt is None or attempt.app_user_id != app_user_id:
             raise NotFoundError("Attempt not found.")
-        challenge = await self._repo.get_challenge(attempt.challenge_id)
+        challenge = await self._content.get_challenge(attempt.challenge_id)
         assert challenge is not None
         rows = await self._repo.list_attempt_questions(attempt_id)
 
@@ -872,21 +872,21 @@ class LearningJourneyService:
     # --- POST /v1/challenges/attempts/{id}/submit -----------------------------------
 
     async def _compute_next_challenge_id(self, challenge: Any) -> str | None:
-        siblings = await self._repo.list_challenges_for_milestone(challenge.milestone_id)
+        siblings = await self._content.list_challenges_for_milestone(challenge.milestone_id)
         same_milestone_next = next(
             (c for c in siblings if c.position == challenge.position + 1), None
         )
         if same_milestone_next is not None:
             return same_milestone_next.challenge_id
-        milestone = await self._repo.get_milestone(challenge.milestone_id)
+        milestone = await self._content.get_milestone(challenge.milestone_id)
         assert milestone is not None
-        all_milestones = await self._repo.list_milestones(milestone.journey_id)
+        all_milestones = await self._content.list_milestones(milestone.journey_id)
         next_milestone = next(
             (m for m in all_milestones if m.position == milestone.position + 1), None
         )
         if next_milestone is None:
             return None
-        next_challenges = await self._repo.list_challenges_for_milestone(
+        next_challenges = await self._content.list_challenges_for_milestone(
             next_milestone.milestone_id
         )
         first = next((c for c in next_challenges if c.position == 1), None)
@@ -930,7 +930,7 @@ class LearningJourneyService:
                 now=now,
             )
 
-            challenge = await self._repo.get_challenge(attempt.challenge_id)
+            challenge = await self._content.get_challenge(attempt.challenge_id)
             assert challenge is not None
             progress = await self._repo.get_progress(
                 assignment_id=attempt.assignment_id, challenge_id=attempt.challenge_id
@@ -1090,7 +1090,7 @@ class LearningJourneyService:
             if not source.incorrect_count:
                 raise ValidationError("The source attempt has no incorrect questions.")
 
-            challenge = await self._repo.get_challenge(challenge_id)
+            challenge = await self._content.get_challenge(challenge_id)
             assert challenge is not None
 
             existing = await self._repo.get_remediation_by_source_attempt(source_attempt_id)
@@ -1102,12 +1102,17 @@ class LearningJourneyService:
                 rows = await self._repo.list_attempt_questions(existing.attempt_id)
                 outs = [self._hydrate_attempt_question(row) for row in rows]
                 return 200, self._remediation_envelope(
-                    existing, attempt, outs, challenge_id, challenge.milestone_id
+                    existing,
+                    attempt,
+                    outs,
+                    challenge_id,
+                    challenge.milestone_id,
+                    challenge.journey_id,
                 )
 
             source_rows = await self._repo.list_attempt_questions(source_attempt_id)
             incorrect_rows = [r for r in source_rows if not r.is_correct]
-            questions_by_id = await self._repo.get_questions_by_ids(
+            questions_by_id = await self._content.get_questions_by_ids(
                 [r.question_id for r in incorrect_rows]
             )
             questions_with_position = [
@@ -1167,7 +1172,12 @@ class LearningJourneyService:
             )
 
             return 201, self._remediation_envelope(
-                remediation, attempt, outs, challenge_id, challenge.milestone_id
+                remediation,
+                attempt,
+                outs,
+                challenge_id,
+                challenge.milestone_id,
+                challenge.journey_id,
             )
 
         return await self._with_idempotency(
@@ -1185,12 +1195,13 @@ class LearningJourneyService:
         questions: list[AttemptQuestionOut],
         challenge_id: str,
         milestone_id: str,
+        journey_id: str,
     ) -> dict[str, Any]:
         meta = remediation.generation_metadata
         out = RemediationCreateOut(
             remediation_id=remediation.remediation_id,
             session_id=remediation.session_id,
-            journey_id=_JOURNEY_ID,
+            journey_id=journey_id,
             milestone_id=milestone_id,
             challenge_id=challenge_id,
             source_attempt_id=remediation.source_attempt_id,
@@ -1281,11 +1292,13 @@ class LearningJourneyService:
         """Returns (current_challenge, next_challenge, progress_by_challenge_id) —
         the first not-COMPLETED challenge in journey order, and the one right
         after it, across the whole journey (not just one milestone)."""
-        milestones = await self._repo.list_milestones(_JOURNEY_ID)
+        milestones = await self._content.list_milestones(await self._journey_id())
         progress_by_challenge = await self._repo.list_progress(assignment_id)
         sequence: list[Any] = []
         for milestone in milestones:
-            sequence.extend(await self._repo.list_challenges_for_milestone(milestone.milestone_id))
+            sequence.extend(
+                await self._content.list_challenges_for_milestone(milestone.milestone_id)
+            )
 
         current = None
         current_index = None

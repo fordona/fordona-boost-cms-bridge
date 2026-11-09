@@ -1,6 +1,6 @@
 """All Postgres access for the Learning Journey feature.
 
-Content tables (seeded by migration 0002) are read-only here. Per-user/dynamic tables
+Per-learner state only (content is read through ``content.JourneyContentSource``). Tables
 are read and written. Every method opens its own session, following
 ``db/snapshot_repository.py``'s convention: ``async with self._sessionmaker() as
 session:`` for reads, ``async with self._sessionmaker() as session, session.begin():``
@@ -18,14 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from fordona_connect.learning_journey.models import (
     LearningJourneyAttempt,
     LearningJourneyAttemptQuestion,
-    LearningJourneyChallenge,
-    LearningJourneyChallengeQuestionMembership,
     LearningJourneyIdempotencyRecord,
-    LearningJourneyMilestone,
-    LearningJourneyQuestion,
     LearningJourneyRemediation,
     LearningJourneySession,
-    LearningJourneyTemplate,
     LearningJourneyUserAssignment,
     LearningJourneyUserChallengeProgress,
 )
@@ -34,69 +29,6 @@ from fordona_connect.learning_journey.models import (
 class LearningJourneyRepository:
     def __init__(self, sessionmaker: async_sessionmaker[AsyncSession]) -> None:
         self._sessionmaker = sessionmaker
-
-    # --- Content reads (read-only after migration 0002) ---------------------
-
-    async def get_journey_template(self, journey_id: str) -> LearningJourneyTemplate | None:
-        async with self._sessionmaker() as session:
-            return await session.get(LearningJourneyTemplate, journey_id)
-
-    async def list_milestones(self, journey_id: str) -> Sequence[LearningJourneyMilestone]:
-        async with self._sessionmaker() as session:
-            stmt = (
-                select(LearningJourneyMilestone)
-                .where(LearningJourneyMilestone.journey_id == journey_id)
-                .order_by(LearningJourneyMilestone.position)
-            )
-            return (await session.execute(stmt)).scalars().all()
-
-    async def get_milestone(self, milestone_id: str) -> LearningJourneyMilestone | None:
-        async with self._sessionmaker() as session:
-            return await session.get(LearningJourneyMilestone, milestone_id)
-
-    async def list_challenges_for_milestone(
-        self, milestone_id: str
-    ) -> Sequence[LearningJourneyChallenge]:
-        async with self._sessionmaker() as session:
-            stmt = (
-                select(LearningJourneyChallenge)
-                .where(LearningJourneyChallenge.milestone_id == milestone_id)
-                .order_by(LearningJourneyChallenge.position)
-            )
-            return (await session.execute(stmt)).scalars().all()
-
-    async def get_challenge(self, challenge_id: str) -> LearningJourneyChallenge | None:
-        async with self._sessionmaker() as session:
-            return await session.get(LearningJourneyChallenge, challenge_id)
-
-    async def list_questions_for_challenge(
-        self, challenge_id: str
-    ) -> Sequence[tuple[LearningJourneyQuestion, int]]:
-        """Questions in membership ``position`` order, paired with that position."""
-        async with self._sessionmaker() as session:
-            stmt = (
-                select(LearningJourneyQuestion, LearningJourneyChallengeQuestionMembership.position)
-                .join(
-                    LearningJourneyChallengeQuestionMembership,
-                    LearningJourneyChallengeQuestionMembership.question_id
-                    == LearningJourneyQuestion.question_id,
-                )
-                .where(LearningJourneyChallengeQuestionMembership.challenge_id == challenge_id)
-                .order_by(LearningJourneyChallengeQuestionMembership.position)
-            )
-            return [(row[0], row[1]) for row in (await session.execute(stmt)).all()]
-
-    async def get_questions_by_ids(
-        self, question_ids: Sequence[str]
-    ) -> dict[str, LearningJourneyQuestion]:
-        if not question_ids:
-            return {}
-        async with self._sessionmaker() as session:
-            stmt = select(LearningJourneyQuestion).where(
-                LearningJourneyQuestion.question_id.in_(question_ids)
-            )
-            rows = (await session.execute(stmt)).scalars().all()
-            return {row.question_id: row for row in rows}
 
     # --- Assignment / progress -----------------------------------------------
 

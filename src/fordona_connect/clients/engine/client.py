@@ -102,6 +102,17 @@ class EngineClient:
             return EngineResponse(data=None, etag=response.headers.get("ETag"), not_modified=True)
         return self._unwrap(response, path)
 
+    async def get_as_service(
+        self, path: str, *, params: dict[str, str] | None = None
+    ) -> EngineResponse:
+        """A service-to-service call (``/internal/learning/**``): the internal token
+        only, no learner JWT, so it works outside a request (background jobs)."""
+        headers = {INTERNAL_TOKEN_HEADER: self._internal_token}
+        if correlation_id := get_correlation_id():
+            headers[CORRELATION_ID_HEADER] = correlation_id
+        response = await self._send("GET", path, headers=headers, params=params)
+        return self._unwrap(response, path)
+
     async def post(
         self,
         path: str,

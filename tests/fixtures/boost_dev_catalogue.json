@@ -1,0 +1,1122 @@
+{
+ "source": "Boost dev (boost-dev.fordona.dev), captured 2026-11-09 through the Boost MCP: every published module, chapter and question, and learning journey 3 ('Testresa: fordona-connect', created for this test). Chapter HTML is shortened; everything else is as published.",
+ "modules": [
+  {
+   "id": "1",
+   "version": "3",
+   "title": {
+    "sv-SE": "Väjningsregler och korsningar",
+    "en-GB": "Give-way rules and junctions"
+   }
+  },
+  {
+   "id": "2",
+   "version": "3",
+   "title": {
+    "sv-SE": "Hastighet och avstånd",
+    "en-GB": "Speed and distance"
+   }
+  },
+  {
+   "id": "3",
+   "version": "3",
+   "title": {
+    "sv-SE": "Människan i trafiken",
+    "en-GB": "The human factor"
+   }
+  }
+ ],
+ "chapters": [
+  {
+   "id": "1",
+   "version": "3",
+   "moduleId": "1",
+   "estimatedReadMinutes": 5,
+   "title": {
+    "sv-SE": "Högerregeln",
+    "en-GB": "The priority-to-the-right rule"
+   }
+  },
+  {
+   "id": "2",
+   "version": "3",
+   "moduleId": "1",
+   "estimatedReadMinutes": 6,
+   "title": {
+    "sv-SE": "Väjningsplikt och stopplikt",
+    "en-GB": "Give way and stop signs"
+   }
+  },
+  {
+   "id": "3",
+   "version": "3",
+   "moduleId": "2",
+   "estimatedReadMinutes": 5,
+   "title": {
+    "sv-SE": "Hastighetsbegränsningar",
+    "en-GB": "Speed limits"
+   }
+  },
+  {
+   "id": "4",
+   "version": "3",
+   "moduleId": "2",
+   "estimatedReadMinutes": 6,
+   "title": {
+    "sv-SE": "Säkerhetsavstånd och stoppsträcka",
+    "en-GB": "Following distance and stopping distance"
+   }
+  },
+  {
+   "id": "5",
+   "version": "3",
+   "moduleId": "3",
+   "estimatedReadMinutes": 6,
+   "title": {
+    "sv-SE": "Alkohol och droger",
+    "en-GB": "Alcohol and drugs"
+   }
+  },
+  {
+   "id": "6",
+   "version": "3",
+   "moduleId": "3",
+   "estimatedReadMinutes": 5,
+   "title": {
+    "sv-SE": "Trötthet och uppmärksamhet",
+    "en-GB": "Tiredness and attention"
+   }
+  }
+ ],
+ "questions": [
+  {
+   "id": "1",
+   "version": "3",
+   "lessonId": "1",
+   "moduleId": "1",
+   "subjectId": "1",
+   "difficulty": 2,
+   "type": "mcq",
+   "correctOptionId": "b",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Du kommer till en korsning utan väjningsskyltar eller trafiksignaler. En bil närmar sig från höger. Vad gäller?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Jag har företräde eftersom jag kom först."
+      },
+      {
+       "id": "b",
+       "text": "Jag ska lämna företräde åt bilen från höger."
+      },
+      {
+       "id": "c",
+       "text": "Den som kör fortast har företräde."
+      },
+      {
+       "id": "d",
+       "text": "Den som ska svänga vänster har företräde."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "You arrive at a junction with no give-way signs or traffic lights. A car is approaching from your right. What applies?",
+     "options": [
+      {
+       "id": "a",
+       "text": "I have priority because I got there first."
+      },
+      {
+       "id": "b",
+       "text": "I must give way to the car from the right."
+      },
+      {
+       "id": "c",
+       "text": "Whoever is driving fastest has priority."
+      },
+      {
+       "id": "d",
+       "text": "Whoever is turning left has priority."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "2",
+   "version": "3",
+   "lessonId": "1",
+   "moduleId": "1",
+   "subjectId": "1",
+   "difficulty": 2,
+   "type": "truefalse",
+   "correctOptionId": "a",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Högerregeln gäller även mot en cyklist som cyklar på körbanan och kommer från höger.",
+     "options": [
+      {
+       "id": "a",
+       "text": "Sant"
+      },
+      {
+       "id": "b",
+       "text": "Falskt"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "The priority-to-the-right rule also applies to a cyclist riding on the carriageway who is coming from your right.",
+     "options": [
+      {
+       "id": "a",
+       "text": "True"
+      },
+      {
+       "id": "b",
+       "text": "False"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "3",
+   "version": "3",
+   "lessonId": "1",
+   "moduleId": "1",
+   "subjectId": "1",
+   "difficulty": 3,
+   "type": "mcq",
+   "correctOptionId": "c",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Du kör ut från en parkeringsplats och ut på en väg. Vad gäller?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Högerregeln gäller."
+      },
+      {
+       "id": "b",
+       "text": "Trafiken på vägen ska lämna företräde åt mig."
+      },
+      {
+       "id": "c",
+       "text": "Jag har väjningsplikt mot all trafik på vägen."
+      },
+      {
+       "id": "d",
+       "text": "Jag har bara väjningsplikt mot fordon från vänster."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "You are driving out of a car park onto a road. What applies?",
+     "options": [
+      {
+       "id": "a",
+       "text": "The priority-to-the-right rule applies."
+      },
+      {
+       "id": "b",
+       "text": "Traffic on the road must give way to me."
+      },
+      {
+       "id": "c",
+       "text": "I must give way to all traffic on the road."
+      },
+      {
+       "id": "d",
+       "text": "I only need to give way to vehicles from the left."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "4",
+   "version": "3",
+   "lessonId": "2",
+   "moduleId": "1",
+   "subjectId": "1",
+   "difficulty": 1,
+   "type": "mcq",
+   "correctOptionId": "a",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Vad betyder en åttkantig röd skylt med texten STOP?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Jag måste stanna helt och sedan lämna företräde."
+      },
+      {
+       "id": "b",
+       "text": "Jag ska sänka farten men behöver inte stanna om det är fritt."
+      },
+      {
+       "id": "c",
+       "text": "Jag har företräde i nästa korsning."
+      },
+      {
+       "id": "d",
+       "text": "Parkering är förbjuden."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "What does a red octagonal sign with the word STOP mean?",
+     "options": [
+      {
+       "id": "a",
+       "text": "I must stop completely and then give way."
+      },
+      {
+       "id": "b",
+       "text": "I must slow down but do not need to stop if the road is clear."
+      },
+      {
+       "id": "c",
+       "text": "I have priority at the next junction."
+      },
+      {
+       "id": "d",
+       "text": "Parking is not allowed."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "5",
+   "version": "3",
+   "lessonId": "2",
+   "moduleId": "1",
+   "subjectId": "1",
+   "difficulty": 2,
+   "type": "truefalse",
+   "correctOptionId": "b",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Vid väjningsplikt måste du alltid stanna helt, även om vägen är fri.",
+     "options": [
+      {
+       "id": "a",
+       "text": "Sant"
+      },
+      {
+       "id": "b",
+       "text": "Falskt"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "At a give-way sign you must always come to a complete stop, even if the road is clear.",
+     "options": [
+      {
+       "id": "a",
+       "text": "True"
+      },
+      {
+       "id": "b",
+       "text": "False"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "6",
+   "version": "3",
+   "lessonId": "2",
+   "moduleId": "1",
+   "subjectId": "1",
+   "difficulty": 3,
+   "type": "mcq",
+   "correctOptionId": "c",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Du har stopplikt, men det finns ingen stopplinje. Var ska du stanna?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Precis vid STOP-skylten."
+      },
+      {
+       "id": "b",
+       "text": "Mitt i korsningen."
+      },
+      {
+       "id": "c",
+       "text": "Där jag har god sikt över den korsande vägen."
+      },
+      {
+       "id": "d",
+       "text": "Jag behöver inte stanna om det saknas stopplinje."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "You must stop at a STOP sign, but there is no stop line. Where should you stop?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Right next to the STOP sign."
+      },
+      {
+       "id": "b",
+       "text": "In the middle of the junction."
+      },
+      {
+       "id": "c",
+       "text": "Where I have a good view of the road I am crossing."
+      },
+      {
+       "id": "d",
+       "text": "I do not need to stop if there is no stop line."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "7",
+   "version": "3",
+   "lessonId": "3",
+   "moduleId": "2",
+   "subjectId": "1",
+   "difficulty": 1,
+   "type": "mcq",
+   "correctOptionId": "b",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Vilken hastighet gäller inom tättbebyggt område om ingen annan hastighetsbegränsning är skyltad?",
+     "options": [
+      {
+       "id": "a",
+       "text": "30 km/h"
+      },
+      {
+       "id": "b",
+       "text": "50 km/h"
+      },
+      {
+       "id": "c",
+       "text": "60 km/h"
+      },
+      {
+       "id": "d",
+       "text": "70 km/h"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "What speed limit applies in a built-up area if no other limit is signposted?",
+     "options": [
+      {
+       "id": "a",
+       "text": "30 km/h"
+      },
+      {
+       "id": "b",
+       "text": "50 km/h"
+      },
+      {
+       "id": "c",
+       "text": "60 km/h"
+      },
+      {
+       "id": "d",
+       "text": "70 km/h"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "8",
+   "version": "3",
+   "lessonId": "3",
+   "moduleId": "2",
+   "subjectId": "1",
+   "difficulty": 2,
+   "type": "mcq",
+   "correctOptionId": "c",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Vilken hastighet gäller utanför tättbebyggt område om ingen annan hastighetsbegränsning är skyltad?",
+     "options": [
+      {
+       "id": "a",
+       "text": "50 km/h"
+      },
+      {
+       "id": "b",
+       "text": "60 km/h"
+      },
+      {
+       "id": "c",
+       "text": "70 km/h"
+      },
+      {
+       "id": "d",
+       "text": "90 km/h"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "What speed limit applies outside built-up areas if no other limit is signposted?",
+     "options": [
+      {
+       "id": "a",
+       "text": "50 km/h"
+      },
+      {
+       "id": "b",
+       "text": "60 km/h"
+      },
+      {
+       "id": "c",
+       "text": "70 km/h"
+      },
+      {
+       "id": "d",
+       "text": "90 km/h"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "9",
+   "version": "3",
+   "lessonId": "3",
+   "moduleId": "2",
+   "subjectId": "6",
+   "difficulty": 2,
+   "type": "truefalse",
+   "correctOptionId": "b",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Den skyltade hastighetsbegränsningen är alltid en lämplig hastighet att köra i.",
+     "options": [
+      {
+       "id": "a",
+       "text": "Sant"
+      },
+      {
+       "id": "b",
+       "text": "Falskt"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "The signposted speed limit is always a suitable speed to drive at.",
+     "options": [
+      {
+       "id": "a",
+       "text": "True"
+      },
+      {
+       "id": "b",
+       "text": "False"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "10",
+   "version": "3",
+   "lessonId": "4",
+   "moduleId": "2",
+   "subjectId": "6",
+   "difficulty": 3,
+   "type": "mcq",
+   "correctOptionId": "c",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Ungefär hur mycket längre blir bromssträckan om du fördubblar hastigheten?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Den blir dubbelt så lång."
+      },
+      {
+       "id": "b",
+       "text": "Den blir tre gånger så lång."
+      },
+      {
+       "id": "c",
+       "text": "Den blir ungefär fyra gånger så lång."
+      },
+      {
+       "id": "d",
+       "text": "Den blir lika lång."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "Roughly how much longer does your braking distance become if you double your speed?",
+     "options": [
+      {
+       "id": "a",
+       "text": "It becomes twice as long."
+      },
+      {
+       "id": "b",
+       "text": "It becomes three times as long."
+      },
+      {
+       "id": "c",
+       "text": "It becomes roughly four times as long."
+      },
+      {
+       "id": "d",
+       "text": "It stays the same."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "11",
+   "version": "3",
+   "lessonId": "4",
+   "moduleId": "2",
+   "subjectId": "6",
+   "difficulty": 2,
+   "type": "mcq",
+   "correctOptionId": "a",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Vad består stoppsträckan av?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Reaktionssträcka plus bromssträcka."
+      },
+      {
+       "id": "b",
+       "text": "Bara bromssträckan."
+      },
+      {
+       "id": "c",
+       "text": "Avståndet till bilen framför."
+      },
+      {
+       "id": "d",
+       "text": "Reaktionssträckan minus bromssträckan."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "What does stopping distance consist of?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Reaction distance plus braking distance."
+      },
+      {
+       "id": "b",
+       "text": "Braking distance only."
+      },
+      {
+       "id": "c",
+       "text": "The distance to the car in front."
+      },
+      {
+       "id": "d",
+       "text": "Reaction distance minus braking distance."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "12",
+   "version": "3",
+   "lessonId": "4",
+   "moduleId": "2",
+   "subjectId": "6",
+   "difficulty": 2,
+   "type": "truefalse",
+   "correctOptionId": "a",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Enligt tresekundersregeln ligger du för nära om du passerar den fasta punkten innan du hunnit räkna till tre.",
+     "options": [
+      {
+       "id": "a",
+       "text": "Sant"
+      },
+      {
+       "id": "b",
+       "text": "Falskt"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "Under the three-second rule, you are too close if you pass the fixed point before you have counted to three.",
+     "options": [
+      {
+       "id": "a",
+       "text": "True"
+      },
+      {
+       "id": "b",
+       "text": "False"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "13",
+   "version": "3",
+   "lessonId": "5",
+   "moduleId": "3",
+   "subjectId": "2",
+   "difficulty": 2,
+   "type": "mcq",
+   "correctOptionId": "b",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Från vilken alkoholhalt i blodet räknas det som rattfylleri?",
+     "options": [
+      {
+       "id": "a",
+       "text": "0,1 promille"
+      },
+      {
+       "id": "b",
+       "text": "0,2 promille"
+      },
+      {
+       "id": "c",
+       "text": "0,5 promille"
+      },
+      {
+       "id": "d",
+       "text": "1,0 promille"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "From what blood alcohol level does it count as drink-driving?",
+     "options": [
+      {
+       "id": "a",
+       "text": "0.1 per mille"
+      },
+      {
+       "id": "b",
+       "text": "0.2 per mille"
+      },
+      {
+       "id": "c",
+       "text": "0.5 per mille"
+      },
+      {
+       "id": "d",
+       "text": "1.0 per mille"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "14",
+   "version": "3",
+   "lessonId": "5",
+   "moduleId": "3",
+   "subjectId": "2",
+   "difficulty": 3,
+   "type": "mcq",
+   "correctOptionId": "c",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Från vilken alkoholhalt i blodet räknas det som grovt rattfylleri?",
+     "options": [
+      {
+       "id": "a",
+       "text": "0,5 promille"
+      },
+      {
+       "id": "b",
+       "text": "0,8 promille"
+      },
+      {
+       "id": "c",
+       "text": "1,0 promille"
+      },
+      {
+       "id": "d",
+       "text": "1,5 promille"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "From what blood alcohol level does it count as aggravated drink-driving?",
+     "options": [
+      {
+       "id": "a",
+       "text": "0.5 per mille"
+      },
+      {
+       "id": "b",
+       "text": "0.8 per mille"
+      },
+      {
+       "id": "c",
+       "text": "1.0 per mille"
+      },
+      {
+       "id": "d",
+       "text": "1.5 per mille"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "15",
+   "version": "3",
+   "lessonId": "5",
+   "moduleId": "3",
+   "subjectId": "2",
+   "difficulty": 1,
+   "type": "truefalse",
+   "correctOptionId": "b",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Kaffe påskyndar kroppens förbränning av alkohol.",
+     "options": [
+      {
+       "id": "a",
+       "text": "Sant"
+      },
+      {
+       "id": "b",
+       "text": "Falskt"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "Coffee speeds up how quickly your body breaks down alcohol.",
+     "options": [
+      {
+       "id": "a",
+       "text": "True"
+      },
+      {
+       "id": "b",
+       "text": "False"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "16",
+   "version": "3",
+   "lessonId": "6",
+   "moduleId": "3",
+   "subjectId": "2",
+   "difficulty": 2,
+   "type": "mcq",
+   "correctOptionId": "d",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Du känner dig mycket trött under en lång körning. Vad är det bästa du kan göra?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Öppna fönstret och fortsätt köra."
+      },
+      {
+       "id": "b",
+       "text": "Höja musiken."
+      },
+      {
+       "id": "c",
+       "text": "Öka farten för att komma fram snabbare."
+      },
+      {
+       "id": "d",
+       "text": "Stanna på en säker plats och vila eller sova en stund."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "You feel very tired during a long drive. What is the best thing to do?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Open the window and keep driving."
+      },
+      {
+       "id": "b",
+       "text": "Turn up the music."
+      },
+      {
+       "id": "c",
+       "text": "Speed up to get there sooner."
+      },
+      {
+       "id": "d",
+       "text": "Stop somewhere safe and rest or sleep for a while."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "17",
+   "version": "3",
+   "lessonId": "6",
+   "moduleId": "3",
+   "subjectId": "1",
+   "difficulty": 1,
+   "type": "truefalse",
+   "correctOptionId": "b",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Det är tillåtet att hålla mobiltelefonen i handen och prata i den medan du kör.",
+     "options": [
+      {
+       "id": "a",
+       "text": "Sant"
+      },
+      {
+       "id": "b",
+       "text": "Falskt"
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "It is allowed to hold your mobile phone in your hand and talk on it while driving.",
+     "options": [
+      {
+       "id": "a",
+       "text": "True"
+      },
+      {
+       "id": "b",
+       "text": "False"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "18",
+   "version": "3",
+   "lessonId": "6",
+   "moduleId": "3",
+   "subjectId": "2",
+   "difficulty": 2,
+   "type": "mcq",
+   "correctOptionId": "a",
+   "translations": {
+    "sv-SE": {
+     "questionText": "Vilket av följande är ett varningstecken på trötthet?",
+     "options": [
+      {
+       "id": "a",
+       "text": "Jag minns inte de senaste kilometrarna."
+      },
+      {
+       "id": "b",
+       "text": "Jag ser vägmärkena tydligt."
+      },
+      {
+       "id": "c",
+       "text": "Jag håller en jämn hastighet."
+      },
+      {
+       "id": "d",
+       "text": "Jag tittar ofta i speglarna."
+      }
+     ]
+    },
+    "en-GB": {
+     "questionText": "Which of the following is a warning sign of tiredness?",
+     "options": [
+      {
+       "id": "a",
+       "text": "I cannot remember the last few kilometres."
+      },
+      {
+       "id": "b",
+       "text": "I can see the road signs clearly."
+      },
+      {
+       "id": "c",
+       "text": "I am keeping a steady speed."
+      },
+      {
+       "id": "d",
+       "text": "I check my mirrors often."
+      }
+     ]
+    }
+   }
+  }
+ ],
+ "journeys": [
+  {
+   "id": "3",
+   "version": "2",
+   "title": {
+    "sv-SE": "Testresa: fordona-connect",
+    "en-GB": "Test journey: fordona-connect"
+   },
+   "milestones": [
+    {
+     "id": "3",
+     "title": {
+      "sv-SE": "Företräde",
+      "en-GB": "Right of way"
+     },
+     "challenges": [
+      {
+       "id": "4",
+       "title": {
+        "sv-SE": "Högerregeln",
+        "en-GB": "The right-hand rule"
+       },
+       "goal": {
+        "sv-SE": "Veta när högerregeln gäller och när den inte gäller.",
+        "en-GB": "Know when the right-hand rule applies and when it does not."
+       },
+       "chapterIds": [
+        "1"
+       ],
+       "questionIds": [
+        "1",
+        "2",
+        "3"
+       ]
+      },
+      {
+       "id": "5",
+       "title": {
+        "sv-SE": "Väjningsplikt och stopplikt",
+        "en-GB": "Give way and stop"
+       },
+       "goal": {
+        "sv-SE": "Skilja på väjningsplikt och stopplikt och veta var man stannar.",
+        "en-GB": "Tell give way from stop and know where to stop."
+       },
+       "chapterIds": [
+        "2"
+       ],
+       "questionIds": [
+        "4",
+        "5",
+        "6"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "4",
+     "title": {
+      "sv-SE": "Fart och avstånd",
+      "en-GB": "Speed and distance"
+     },
+     "challenges": [
+      {
+       "id": "6",
+       "title": {
+        "sv-SE": "Hastighetsbegränsningar",
+        "en-GB": "Speed limits"
+       },
+       "goal": {
+        "sv-SE": "Känna till bashastigheterna och anpassa farten efter förhållandena.",
+        "en-GB": "Know the default speed limits and adapt speed to conditions."
+       },
+       "chapterIds": [
+        "3"
+       ],
+       "questionIds": [
+        "7",
+        "8",
+        "9"
+       ]
+      },
+      {
+       "id": "7",
+       "title": {
+        "sv-SE": "Säkerhetsavstånd och stoppsträcka",
+        "en-GB": "Following distance and stopping distance"
+       },
+       "goal": {
+        "sv-SE": "Förstå stoppsträckan och använda tresekundersregeln.",
+        "en-GB": "Understand stopping distance and use the three-second rule."
+       },
+       "chapterIds": [
+        "4"
+       ],
+       "questionIds": [
+        "10",
+        "11",
+        "12"
+       ]
+      }
+     ]
+    },
+    {
+     "id": "5",
+     "title": {
+      "sv-SE": "Föraren",
+      "en-GB": "The driver"
+     },
+     "challenges": [
+      {
+       "id": "8",
+       "title": {
+        "sv-SE": "Alkohol och droger",
+        "en-GB": "Alcohol and drugs"
+       },
+       "goal": {
+        "sv-SE": "Känna till gränserna för rattfylleri och hur alkohol påverkar körningen.",
+        "en-GB": "Know the drink-driving limits and how alcohol affects driving."
+       },
+       "chapterIds": [
+        "5"
+       ],
+       "questionIds": [
+        "13",
+        "14",
+        "15"
+       ]
+      },
+      {
+       "id": "9",
+       "title": {
+        "sv-SE": "Trötthet och uppmärksamhet",
+        "en-GB": "Tiredness and attention"
+       },
+       "goal": {
+        "sv-SE": "Känna igen trötthet och veta vad som hjälper.",
+        "en-GB": "Recognise tiredness and know what helps."
+       },
+       "chapterIds": [
+        "6"
+       ],
+       "questionIds": [
+        "16",
+        "17",
+        "18"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

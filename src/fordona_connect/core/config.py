@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     boost_base_url: AnyHttpUrl = AnyHttpUrl("https://boost-api.fordona.io")
     boost_auth_mode: BoostAuthMode = BoostAuthMode.FORWARD_LEARNER_TOKEN
     boost_delivery_token: SecretStr = SecretStr("")
+    # Boost's grading credential: answer keys for the content sync. Server-side only.
+    boost_grading_token: SecretStr = SecretStr("")
     # Fallback asset URL prefix, used only when a delivery item has no
     # ``assetBaseUrl`` of its own. Defaults to ``{BOOST_BASE_URL}/assets``.
     boost_asset_base_url: AnyHttpUrl | None = None
@@ -84,6 +86,31 @@ class Settings(BaseSettings):
     kinde_issuer_uri: str = ""
     kinde_jwks_uri: str = ""
     kinde_audience: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    # --- Learning content sync ----------------------------------------------
+    # Seconds between content syncs from Boost; 0 (the default until the public routes
+    # are served from this read model) turns the background sync off.
+    content_sync_interval_seconds: int = Field(default=0, ge=0)
+    # Page size for Boost's paged list endpoints during a sync.
+    content_page_size: int = Field(default=250, ge=1, le=1000)
+
+    # --- Learning ------------------------------------------------------------
+    # Who serves the theory routes: this service's own learning modules ("local"), or
+    # fordona-engine's legacy internal theory API ("engine", until it is removed).
+    theory_backend: Literal["local", "engine"] = "local"
+    # Question selection for a lesson attempt: the lesson's whole active-question bank
+    # ("lesson-bank-v1"), or the linked learning-journey challenge's quiz ("challenge-v1").
+    theory_selection_strategy: Literal["lesson-bank-v1", "challenge-v1"] = "lesson-bank-v1"
+    # First day of the home screen's week, and the daily challenge's lesson target.
+    progress_week_starts_on: Literal[
+        "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
+    ] = "SUNDAY"
+    progress_daily_challenge_lessons: int = Field(default=3, ge=1)
+
+    # Seconds a learner's platform context (name, subscription) is cached.
+    platform_learner_cache_seconds: int = Field(default=60, ge=1)
+    # Seconds between pulls of fordona-engine's event outbox; 0 turns the consumer off.
+    platform_events_interval_seconds: float = Field(default=0, ge=0)
 
     # --- Locale ------------------------------------------------------------
     default_locale: str = "sv-SE"
@@ -164,6 +191,15 @@ class Settings(BaseSettings):
                 raise ValueError("ENGINE_INTERNAL_TOKEN is required when APP_ENV is not 'local'")
             if not self.media_signing_key.get_secret_value():
                 raise ValueError("MEDIA_SIGNING_KEY is required when APP_ENV is not 'local'")
+        if self.content_sync_interval_seconds > 0 and self.app_env is not Environment.LOCAL:
+            # The sync runs outside any request, so it has no learner token to forward.
+            if self.boost_auth_mode is not BoostAuthMode.SERVICE_TOKEN:
+                raise ValueError("The content sync needs BOOST_AUTH_MODE=service_token")
+            if not self.boost_grading_token.get_secret_value():
+                raise ValueError(
+                    "BOOST_GRADING_TOKEN is required when the content sync is on "
+                    "(CONTENT_SYNC_INTERVAL_SECONDS > 0)"
+                )
         return self
 
     @property

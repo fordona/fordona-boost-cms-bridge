@@ -104,6 +104,11 @@ def make_settings(**overrides: object) -> Settings:
         "engine_internal_token": "internal-secret",
         "media_cdn_base_url": MEDIA,
         "media_signing_key": "media-secret",
+        # The background content sync would call Boost on its own; tests run it explicitly.
+        "content_sync_interval_seconds": 0,
+        # The route/mapping tests drive TheoryService through a mocked engine; the local
+        # backend is covered end to end in tests/integration/test_local_backend.py.
+        "theory_backend": "engine",
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
@@ -168,8 +173,16 @@ def harness_factory() -> Callable[..., AbstractAsyncContextManager[Harness]]:
                     # exercise it replace ``harness.app.state.services.learning_journey``
                     # with ``FakeLearningJourneyRepository``-backed service instead.
                     db_engine = create_engine(s)
+                    from tests.learning_journey.fakes import (
+                        FakeLearningJourneyRepository,
+                        FakeSubscriptions,
+                    )
+
+                    content = FakeLearningJourneyRepository()
                     learning_journey = LearningJourneyService(
-                        LearningJourneyRepository(create_sessionmaker(db_engine)), raw_engine_client
+                        LearningJourneyRepository(create_sessionmaker(db_engine)),
+                        content,
+                        FakeSubscriptions(),
                     )
 
                     def check(name: str) -> Callable[[], Awaitable[None]]:

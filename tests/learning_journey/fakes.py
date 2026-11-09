@@ -12,60 +12,52 @@ duplicating every field in a second, parallel set of fake dataclasses.
 import json
 from collections.abc import Sequence
 from copy import deepcopy
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fordona_connect.learning_journey.content import (
+    ChallengeContent,
+    JourneyContent,
+    MilestoneContent,
+    QuestionContent,
+)
 from fordona_connect.learning_journey.models import (
     LearningJourneyAttempt,
     LearningJourneyAttemptQuestion,
-    LearningJourneyChallenge,
     LearningJourneyIdempotencyRecord,
-    LearningJourneyMilestone,
-    LearningJourneyQuestion,
     LearningJourneyRemediation,
     LearningJourneySession,
-    LearningJourneyTemplate,
     LearningJourneyUserAssignment,
     LearningJourneyUserChallengeProgress,
 )
 
-_SEED_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "src"
-    / "fordona_connect"
-    / "learning_journey"
-    / "seed"
-    / "learning_journey_mock_db.json"
-)
+# The retired mock catalogue, kept as a realistic fixture: production content now
+# comes from Boost (``learning_journey.boost_content``).
+_SEED_PATH = Path(__file__).resolve().parent / "fixtures" / "learning_journey_mock_db.json"
 
 
-def _row(model_cls: Any, source: dict[str, Any]) -> Any:
-    """The seed JSON carries a few denormalized convenience fields per table
-    (``journey_templates.milestone_ids``, ``milestones.challenge_ids``,
-    ``challenges.question_ids``) that aren't real columns — this repo derives the
-    same information from the membership tables instead. Filters them out so the
-    real ORM model's constructor only sees its actual columns."""
-    columns = {c.name for c in model_cls.__table__.columns}
-    return model_cls(**{k: v for k, v in source.items() if k in columns})
+def _row(cls: Any, source: dict[str, Any]) -> Any:
+    """Build a content dataclass from a seed row, ignoring the seed's extra fields."""
+    fields = set(cls.__dataclass_fields__)
+    return cls(**{k: v for k, v in source.items() if k in fields})
 
 
 class FakeLearningJourneyRepository:
     def __init__(self) -> None:
         data = json.loads(_SEED_PATH.read_text(encoding="utf-8"))
 
-        self.templates: dict[str, LearningJourneyTemplate] = {
-            t["journey_id"]: _row(LearningJourneyTemplate, t) for t in data["journey_templates"]
+        self.templates: dict[str, JourneyContent] = {
+            t["journey_id"]: _row(JourneyContent, t) for t in data["journey_templates"]
         }
-        self.milestones: dict[str, LearningJourneyMilestone] = {
-            m["milestone_id"]: _row(LearningJourneyMilestone, m) for m in data["milestones"]
+        self.milestones: dict[str, MilestoneContent] = {
+            m["milestone_id"]: _row(MilestoneContent, m) for m in data["milestones"]
         }
-        self.challenges: dict[str, LearningJourneyChallenge] = {
-            c["challenge_id"]: _row(LearningJourneyChallenge, c) for c in data["challenges"]
+        self.challenges: dict[str, ChallengeContent] = {
+            c["challenge_id"]: _row(ChallengeContent, c) for c in data["challenges"]
         }
-        self.questions: dict[str, LearningJourneyQuestion] = {
-            q["question_id"]: _row(LearningJourneyQuestion, q) for q in data["questions"]
+        self.questions: dict[str, QuestionContent] = {
+            q["question_id"]: _row(QuestionContent, q) for q in data["questions"]
         }
         # challenge_id -> [(question_id, position), ...] ordered
         self.memberships: dict[str, list[tuple[str, int]]] = {}
@@ -84,38 +76,42 @@ class FakeLearningJourneyRepository:
         self.remediations: dict[str, LearningJourneyRemediation] = {}
         self.idempotency: dict[tuple[str, str, str], LearningJourneyIdempotencyRecord] = {}
 
-    # --- Content reads ---------------------------------------------------------
+    # --- Content (also the service's content source) ---------------------------
 
-    async def get_journey_template(self, journey_id: str) -> LearningJourneyTemplate | None:
+    async def journey_id(self) -> str | None:
+        return next(iter(self.templates), None)
+
+    async def free_milestone_id(self) -> str | None:
+        journey_id = await self.journey_id()
+        milestones = await self.list_milestones(journey_id) if journey_id else []
+        return milestones[0].milestone_id if milestones else None
+
+    async def get_journey_template(self, journey_id: str) -> JourneyContent | None:
         return self.templates.get(journey_id)
 
-    async def list_milestones(self, journey_id: str) -> Sequence[LearningJourneyMilestone]:
+    async def list_milestones(self, journey_id: str) -> Sequence[MilestoneContent]:
         rows = [m for m in self.milestones.values() if m.journey_id == journey_id]
         return sorted(rows, key=lambda m: m.position)
 
-    async def get_milestone(self, milestone_id: str) -> LearningJourneyMilestone | None:
+    async def get_milestone(self, milestone_id: str) -> MilestoneContent | None:
         return self.milestones.get(milestone_id)
 
-    async def list_challenges_for_milestone(
-        self, milestone_id: str
-    ) -> Sequence[LearningJourneyChallenge]:
+    async def list_challenges_for_milestone(self, milestone_id: str) -> Sequence[ChallengeContent]:
         rows = [c for c in self.challenges.values() if c.milestone_id == milestone_id]
         return sorted(rows, key=lambda c: c.position)
 
-    async def get_challenge(self, challenge_id: str) -> LearningJourneyChallenge | None:
+    async def get_challenge(self, challenge_id: str) -> ChallengeContent | None:
         return self.challenges.get(challenge_id)
 
     async def list_questions_for_challenge(
         self, challenge_id: str
-    ) -> Sequence[tuple[LearningJourneyQuestion, int]]:
+    ) -> Sequence[tuple[QuestionContent, int]]:
         return [
             (self.questions[question_id], position)
             for question_id, position in self.memberships.get(challenge_id, [])
         ]
 
-    async def get_questions_by_ids(
-        self, question_ids: Sequence[str]
-    ) -> dict[str, LearningJourneyQuestion]:
+    async def get_questions_by_ids(self, question_ids: Sequence[str]) -> dict[str, QuestionContent]:
         return {qid: self.questions[qid] for qid in question_ids if qid in self.questions}
 
     # --- Assignment / progress -----------------------------------------------
@@ -346,20 +342,14 @@ class FakeLearningJourneyRepository:
         record.response_body = deepcopy(response_body)
 
 
-@dataclass(frozen=True, slots=True)
-class _FakeEngineResponse:
-    data: dict[str, Any]
-
-
-class FakeEngineClient:
-    """Stands in for ``EngineClient`` in entitlement checks — ``subscribed=True`` by
-    default so tests that aren't specifically about the paywall (most of them) don't
-    need to care about it."""
+class FakeSubscriptions:
+    """A ``SubscriptionSource``: ``subscribed=True`` by default so tests that are not
+    about the paywall (most of them) need not care about it."""
 
     def __init__(self, *, subscribed: bool = True) -> None:
         self.subscribed = subscribed
         self.calls: list[str] = []
 
-    async def get(self, path: str, **kwargs: Any) -> _FakeEngineResponse:
-        self.calls.append(path)
-        return _FakeEngineResponse(data={"isActive": self.subscribed})
+    async def is_subscribed(self, learner_id: str) -> bool:
+        self.calls.append(learner_id)
+        return self.subscribed

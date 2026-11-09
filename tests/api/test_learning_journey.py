@@ -15,7 +15,7 @@ import pytest
 
 from fordona_connect.learning_journey.service import LearningJourneyService
 from tests.conftest import Harness
-from tests.learning_journey.fakes import FakeEngineClient, FakeLearningJourneyRepository
+from tests.learning_journey.fakes import FakeLearningJourneyRepository, FakeSubscriptions
 
 CHALLENGE = "ch_028"  # ms_008 — a paid milestone; a subscribed fake engine lets it through
 
@@ -23,8 +23,9 @@ CHALLENGE = "ch_028"  # ms_008 — a paid milestone; a subscribed fake engine le
 @pytest.fixture
 async def journey_harness(harness_factory):  # type: ignore[no-untyped-def]
     async with harness_factory() as harness:
+        repo = FakeLearningJourneyRepository()
         harness.app.state.services.learning_journey = LearningJourneyService(
-            FakeLearningJourneyRepository(), FakeEngineClient(subscribed=True)
+            repo, repo, FakeSubscriptions(subscribed=True)
         )
         yield harness
 

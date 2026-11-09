@@ -4,13 +4,14 @@
 
 The **BFF** (backend for frontend) of the Fordona Theory App.
 
-- **Today:** only health probes are routed. The Phase 1 catalogue routes were retired (P1.T1); the
-  auth/locale dependencies, Boost client, read-through cache and snapshot store remain as the
-  building blocks for P6.
-- **Target (theory first shipment):** the public API the mobile app calls. It composes the
-  fordona-engine's decisions (question *references*, lock state, grading feedback, progress) with
-  answer-free bodies and theory from Boost, and resolves media asset ids to CDN URLs. It never holds
-  learner state, grades, chooses questions or sees an answer key.
+- **The learning service.** It owns theory content (synced from Boost, the only Boost caller),
+  question selection, attempts, **grading** (answer keys stay server-side, in `learning/content`),
+  the retry phase, progress, streaks, readiness, mock exams and learning journeys, in the
+  `connect_learning` schema, and serves the public API the mobile app calls.
+- **fordona-engine is the platform** (identity, subscriptions, payments). fordona-connect calls it
+  (`GET /internal/learning/v1/learners/{kindeSubject}`, the event outbox); it never calls back.
+- Plan, decisions and phase log: `docs/LEARNING_SERVICE_MIGRATION.md` (it overrides the older
+  theory plan wherever they disagree).
 
 **Stack:** Python 3.12 · FastAPI · httpx (async) · Redis · PostgreSQL (SQLAlchemy 2 async + Alembic) ·
 structlog · pydantic-settings · uv
@@ -37,6 +38,9 @@ If the plan looks wrong, ambiguous, or contradicts the code: stop, log a **BLOCK
 
 ```
 src/fordona_connect/
+  learning/          the learning service: content sync + snapshot, attempts and grading, retry,
+                     progress and screens, mock exams, platform client/events, local theory backend
+  learning_journey/  the 11 Learning Journey endpoints (content from Boost via boost_content.py)
   main.py            app factory (create_app) + lifespan; `app` is built lazily
   container.py       composition root: builds clients, cache, DB, verifier; owns their lifecycle
   api/               routers (api/routes/*), dependencies (deps.py), OpenAPI error docs (responses.py)

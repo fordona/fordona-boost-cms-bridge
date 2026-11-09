@@ -21,7 +21,8 @@ Two choices keep the models tolerant of drift:
   the editorial API nests.
 
 Answer fields (``correctOptionId``, ``explanation``) are deliberately **not
-modelled**. Code that does not exist cannot leak them.
+modelled here**. They come only from Boost's grading API, modelled separately in
+``grading.py``, which only the content sync imports.
 """
 
 from datetime import datetime
@@ -239,6 +240,70 @@ class QuestionTranslation(BoostModel):
 class BoostQuestion(BoostEntity):
     shared: QuestionShared = Field(default_factory=QuestionShared)
     translation: QuestionTranslation | None = None
+
+
+# --- Mock exams and learning journeys ----------------------------------------
+#
+# Both are served whole (``{"items": [...]}``, no paging): small catalogues.
+
+
+class BoostMockExam(BoostModel):
+    id: str
+    version: str | None = None
+    name: str | None = None
+    description: str | None = None
+    question_count: int | None = None
+    question_ids: list[str] = Field(default_factory=list)
+    complete: bool | None = None
+
+    @field_validator("question_ids", mode="before")
+    @classmethod
+    def _null_is_empty(cls, value: Any) -> Any:
+        return [] if value is None else value
+
+
+class BoostLearningChallenge(BoostModel):
+    id: str
+    title: str | None = None
+    goal: str | None = None
+    chapter_ids: list[str] = Field(default_factory=list)
+    question_ids: list[str] = Field(default_factory=list)
+
+    @field_validator("chapter_ids", "question_ids", mode="before")
+    @classmethod
+    def _null_is_empty(cls, value: Any) -> Any:
+        return [] if value is None else value
+
+
+class BoostLearningMilestone(BoostModel):
+    id: str
+    title: str | None = None
+    description: str | None = None
+    challenges: list[BoostLearningChallenge] = Field(default_factory=list)
+
+    @field_validator("challenges", mode="before")
+    @classmethod
+    def _null_is_empty(cls, value: Any) -> Any:
+        return [] if value is None else value
+
+
+class BoostLearningJourney(BoostModel):
+    id: str
+    version: str | None = None
+    title: str | None = None
+    description: str | None = None
+    milestones: list[BoostLearningMilestone] = Field(default_factory=list)
+
+    @field_validator("milestones", mode="before")
+    @classmethod
+    def _null_is_empty(cls, value: Any) -> Any:
+        return [] if value is None else value
+
+
+class BoostItems[ItemT: BoostModel](BoostModel):
+    """An unpaged list response: ``{"items": [...]}``."""
+
+    items: list[ItemT] = Field(default_factory=list)
 
 
 # --- Pages -----------------------------------------------------------------
