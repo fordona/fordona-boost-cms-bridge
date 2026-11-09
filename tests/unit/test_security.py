@@ -9,6 +9,7 @@ import jwt
 import pytest
 import respx
 
+from fordona_connect.core import security
 from fordona_connect.core.errors import UnauthorizedError, UpstreamUnavailableError
 from fordona_connect.core.security import JwksCache, TokenVerifier
 from tests.auth import AUDIENCE, ISSUER, JWKS_URI, SigningKey, jwks
@@ -223,3 +224,34 @@ async def test_jwks_without_usable_keys_is_503(verifier: TokenVerifier) -> None:
 
     with pytest.raises(UpstreamUnavailableError):
         await verifier.verify(KEY.token())
+
+
+class RecordingLog:
+    def __init__(self) -> None:
+        self.events: list[dict[str, object]] = []
+
+    def warning(self, event: str, **fields: object) -> None:
+        self.events.append({"event": event, **fields})
+
+    def info(self, event: str, **fields: object) -> None:
+        self.events.append({"event": event, **fields})
+
+
+@respx.mock
+async def test_wrong_audience_rejection_logs_what_was_expected(
+    verifier: TokenVerifier, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    respx.get(JWKS_URI).respond(json=jwks(KEY))
+    recorded = RecordingLog()
+    monkeypatch.setattr(security, "log", recorded)
+    token = KEY.token(aud=["someone-else"])
+
+    with pytest.raises(UnauthorizedError):
+        await verifier.verify(token)
+
+    [event] = [entry for entry in recorded.events if entry["event"] == "token_rejected"]
+    assert event["reason"] == "InvalidAudienceError"
+    assert event["token_aud"] == ["someone-else"]
+    assert event["expected_aud"] == ["other-aud", AUDIENCE]
+    assert event["token_iss"] == event["expected_iss"] == ISSUER
+    assert token not in str(event)

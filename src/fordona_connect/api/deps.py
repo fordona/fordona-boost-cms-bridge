@@ -11,9 +11,12 @@ from fordona_connect.core.config import SUPPORTED_LOCALES, Settings
 from fordona_connect.core.context import learner_id_var, learner_token_var
 from fordona_connect.core.errors import RateLimitedError, UnauthorizedError, ValidationFailedError
 from fordona_connect.core.locale import UnsupportedLocaleError, resolve_locale
+from fordona_connect.core.logging import get_logger
 from fordona_connect.core.security import Learner
 from fordona_connect.learning_journey.service import LearningJourneyService
 from fordona_connect.services.theory_service import TheoryService
+
+log = get_logger(__name__)
 
 _bearer = HTTPBearer(
     auto_error=False,
@@ -43,6 +46,7 @@ async def get_current_learner(
         learner = _LOCAL_LEARNER
     else:
         if credentials is None or credentials.scheme.lower() != "bearer":
+            log.warning("token_rejected", reason="missing_bearer_token")
             raise UnauthorizedError()
         learner = await services.verifier.verify(credentials.credentials)
         # Only a token that passed verification is ever forwarded to Boost.

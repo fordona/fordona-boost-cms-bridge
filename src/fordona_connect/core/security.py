@@ -71,6 +71,7 @@ class JwksCache:
             await self._refresh(reason="unknown_kid")
             key = self._keys.get(kid)
         if key is None:
+            log.warning("token_rejected", reason="unknown_kid", kid=kid, jwks_uri=self._uri)
             raise UnauthorizedError(_INVALID_TOKEN_DETAIL)
         return key
 
@@ -100,6 +101,15 @@ class JwksCache:
                     ) from exc
                 # Keep the keys we have, and do not hammer Kinde while it is down.
                 self._fetched_at = self._clock.now()
+
+
+def _issuer_and_audience(token: str) -> dict[str, Any]:
+    """The token's ``iss`` and ``aud``, read without verification, for a rejection log."""
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return {}
+    return {"token_iss": claims.get("iss"), "token_aud": claims.get("aud")}
 
 
 def _parse_jwks(document: Any) -> dict[str, jwt.PyJWK]:
@@ -156,8 +166,15 @@ class TokenVerifier:
                 options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             )
         except jwt.PyJWTError as exc:
-            # Log the reason class only, never the token.
-            log.info("token_rejected", reason=type(exc).__name__)
+            # Never log the token. Issuer and audience are public configuration, and
+            # logging them next to what we expect makes a misconfiguration obvious.
+            log.warning(
+                "token_rejected",
+                reason=type(exc).__name__,
+                **_issuer_and_audience(token),
+                expected_iss=self._issuer,
+                expected_aud=self._audiences,
+            )
             raise UnauthorizedError(_INVALID_TOKEN_DETAIL) from None
 
         sub = claims.get("sub")
