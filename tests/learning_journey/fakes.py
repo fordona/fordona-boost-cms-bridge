@@ -128,6 +128,10 @@ class FakeLearningJourneyRepository:
     ) -> LearningJourneyUserAssignment:
         key = (app_user_id, journey_id)
         if key not in self.assignments:
+            # Mirror the table's primary key: Postgres rejects a reused assignment_id
+            # even though ON CONFLICT targets (app_user_id, journey_id).
+            if any(a.assignment_id == assignment_id for a in self.assignments.values()):
+                raise ValueError(f"duplicate assignment_id {assignment_id}")
             self.assignments[key] = LearningJourneyUserAssignment(
                 assignment_id=assignment_id,
                 app_user_id=app_user_id,

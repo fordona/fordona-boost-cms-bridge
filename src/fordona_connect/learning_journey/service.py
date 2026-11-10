@@ -155,6 +155,14 @@ class LearningJourneyService:
 
     # --- Assignment bootstrap ------------------------------------------------
 
+    @staticmethod
+    def _assignment_id(app_user_id: str, journey_id: str) -> str:
+        """Deterministic per (learner, journey), the assignment's natural key. Hashing
+        the learner alone made a second journey (e.g. after the published one changed)
+        collide with the first one's primary key."""
+        digest = hashlib.sha256(f"{app_user_id}:{journey_id}".encode()).hexdigest()
+        return f"assignment_{digest[:24]}"
+
     async def _ensure_assignment(self, app_user_id: str) -> str:
         journey_id = await self._journey_id()
         template = await self._content.get_journey_template(journey_id)
@@ -170,7 +178,7 @@ class LearningJourneyService:
             app_user_id=app_user_id,
             journey_id=journey_id,
             journey_version=template.version,
-            assignment_id=f"assignment_{hashlib.sha256(app_user_id.encode()).hexdigest()[:24]}",
+            assignment_id=self._assignment_id(app_user_id, journey_id),
             challenge_ids=challenge_ids,
             now=self._now(),
         )
