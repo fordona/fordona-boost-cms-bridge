@@ -14,6 +14,7 @@ Fixed ids used throughout (confirmed against the bundled seed):
 """
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
@@ -120,6 +121,22 @@ async def test_second_call_does_not_duplicate_the_assignment(
     await service.get_learning_journey(USER)
 
     assert len(repo.assignments) == 1
+
+
+async def test_switching_the_published_journey_gives_the_learner_a_new_assignment(
+    service: LearningJourneyService, repo: FakeLearningJourneyRepository
+) -> None:
+    first = await service.get_learning_journey(USER)
+    old_template = repo.templates["journey_001"]
+    new_template = replace(old_template, journey_id="journey_002")
+    repo.templates = {"journey_002": new_template, "journey_001": old_template}
+
+    await service.get_readiness(USER)
+
+    assert len(repo.assignments) == 2
+    ids = {a.assignment_id for a in repo.assignments.values()}
+    assert first.assignment_id in ids
+    assert len(ids) == 2
 
 
 async def test_journey_embeds_each_milestones_challenges_exactly_as_milestone_detail(
