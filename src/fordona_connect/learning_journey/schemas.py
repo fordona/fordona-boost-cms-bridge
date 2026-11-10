@@ -122,41 +122,6 @@ class MilestoneProgress(LJModel):
     status: ChallengeProgressStatus
 
 
-class MilestoneSummaryOut(LJModel):
-    milestone_id: str
-    journey_id: str
-    position: int
-    title: str
-    description: str | None
-    challenge_count: int
-    question_count: int
-    progress: MilestoneProgress
-    access: AccessState
-
-
-class LearningJourneyOut(LJModel):
-    journey_id: str
-    assignment_id: str
-    version: int
-    title: str
-    description: str | None
-    status: str
-    stats: JourneyStats
-    progress: JourneyProgress
-    current_position: CurrentPosition | None
-    milestones: list[MilestoneSummaryOut]
-    updated_at: datetime
-
-
-# --- GET /v1/milestones -------------------------------------------------------
-
-
-class MilestoneStats(LJModel):
-    challenge_count: int
-    question_count: int
-    difficulty_distribution: dict[str, int]
-
-
 class ChallengeProgressSummary(LJModel):
     status: ChallengeProgressStatus
     best_full_attempt_score_percentage: float | None
@@ -181,6 +146,44 @@ class ChallengeSummaryOut(LJModel):
     # Independent of `access`: a challenge can be unlocked/entitled and still not
     # content-ready.
     is_content_ready: bool
+
+
+class MilestoneSummaryOut(LJModel):
+    milestone_id: str
+    journey_id: str
+    position: int
+    title: str
+    description: str | None
+    challenge_count: int
+    question_count: int
+    progress: MilestoneProgress
+    access: AccessState
+    # Same objects as GET /v1/milestones' `challenges`, so the client can render the
+    # whole path from this one call.
+    challenges: list[ChallengeSummaryOut]
+
+
+class LearningJourneyOut(LJModel):
+    journey_id: str
+    assignment_id: str
+    version: int
+    title: str
+    description: str | None
+    status: str
+    stats: JourneyStats
+    progress: JourneyProgress
+    current_position: CurrentPosition | None
+    milestones: list[MilestoneSummaryOut]
+    updated_at: datetime
+
+
+# --- GET /v1/milestones -------------------------------------------------------
+
+
+class MilestoneStats(LJModel):
+    challenge_count: int
+    question_count: int
+    difficulty_distribution: dict[str, int]
 
 
 class MilestoneDetailOut(LJModel):

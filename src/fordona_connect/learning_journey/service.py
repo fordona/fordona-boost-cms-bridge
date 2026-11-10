@@ -16,7 +16,7 @@ import hashlib
 import json
 import random
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 from fordona_connect.core.errors import AppError
 from fordona_connect.core.logging import get_logger
 from fordona_connect.learning.entitlement import SubscriptionSource
-from fordona_connect.learning_journey.content import JourneyContentSource
+from fordona_connect.learning_journey.content import ChallengeContent, JourneyContentSource
 from fordona_connect.learning_journey.errors import (
     ActiveAttemptExistsError,
     AnswerAlreadyFinalizedError,
@@ -43,6 +43,7 @@ from fordona_connect.learning_journey.models import (
     LearningJourneyAttemptQuestion,
     LearningJourneyRemediation,
     LearningJourneySession,
+    LearningJourneyUserChallengeProgress,
 )
 from fordona_connect.learning_journey.repository import LearningJourneyRepository
 from fordona_connect.learning_journey.schemas import (
@@ -215,6 +216,51 @@ class LearningJourneyService:
 
     # --- GET /v1/learning-journey ------------------------------------------------
 
+    def _challenge_summaries(
+        self,
+        challenges: Sequence[ChallengeContent],
+        progress_by_challenge: Mapping[str, LearningJourneyUserChallengeProgress],
+        *,
+        not_entitled: bool,
+    ) -> list[ChallengeSummaryOut]:
+        """One milestone's challenges with progress and access, shared by
+        GET /v1/learning-journey and GET /v1/milestones so both agree."""
+        outs: list[ChallengeSummaryOut] = []
+        previous_complete = True
+        for challenge in challenges:
+            progress = progress_by_challenge[challenge.challenge_id]
+            is_locked = not_entitled or not previous_complete
+            reason = (
+                "SUBSCRIPTION_REQUIRED"
+                if not_entitled
+                else ("PREREQUISITE_NOT_MET" if is_locked else None)
+            )
+            outs.append(
+                ChallengeSummaryOut(
+                    challenge_id=challenge.challenge_id,
+                    milestone_id=challenge.milestone_id,
+                    position=challenge.position,
+                    display_code=challenge.display_code,
+                    title=challenge.title,
+                    description=challenge.description,
+                    estimated_minutes=challenge.estimated_minutes,
+                    question_count=challenge.question_count,
+                    difficulty_distribution=challenge.difficulty_distribution,
+                    progress=ChallengeProgressSummary(
+                        status=progress.status,
+                        best_full_attempt_score_percentage=(
+                            float(progress.best_full_attempt_score_percentage)
+                            if progress.best_full_attempt_score_percentage is not None
+                            else None
+                        ),
+                    ),
+                    access=AccessState(is_locked=is_locked, reason=reason),
+                    is_content_ready=self._is_content_ready(challenge),
+                )
+            )
+            previous_complete = progress.status == "COMPLETED"
+        return outs
+
     async def get_learning_journey(self, app_user_id: str) -> LearningJourneyOut:
         assignment_id = await self._ensure_assignment(app_user_id)
         journey_id = await self._journey_id()
@@ -268,6 +314,9 @@ class LearningJourneyService:
                         status=status,
                     ),
                     access=AccessState(is_locked=is_locked, reason=reason),
+                    challenges=self._challenge_summaries(
+                        challenges, progress_by_challenge, not_entitled=not_entitled
+                    ),
                 )
             )
             if status == "COMPLETED":
@@ -323,43 +372,10 @@ class LearningJourneyService:
             milestone_id
         ) and not await self._is_subscribed(app_user_id)
 
-        challenge_outs: list[ChallengeSummaryOut] = []
-        previous_complete = True
-        completed = 0
-        for challenge in challenges:
-            progress = progress_by_challenge[challenge.challenge_id]
-            is_locked = not_entitled or not previous_complete
-            reason = (
-                "SUBSCRIPTION_REQUIRED"
-                if not_entitled
-                else ("PREREQUISITE_NOT_MET" if is_locked else None)
-            )
-            challenge_outs.append(
-                ChallengeSummaryOut(
-                    challenge_id=challenge.challenge_id,
-                    milestone_id=challenge.milestone_id,
-                    position=challenge.position,
-                    display_code=challenge.display_code,
-                    title=challenge.title,
-                    description=challenge.description,
-                    estimated_minutes=challenge.estimated_minutes,
-                    question_count=challenge.question_count,
-                    difficulty_distribution=challenge.difficulty_distribution,
-                    progress=ChallengeProgressSummary(
-                        status=progress.status,
-                        best_full_attempt_score_percentage=(
-                            float(progress.best_full_attempt_score_percentage)
-                            if progress.best_full_attempt_score_percentage is not None
-                            else None
-                        ),
-                    ),
-                    access=AccessState(is_locked=is_locked, reason=reason),
-                    is_content_ready=self._is_content_ready(challenge),
-                )
-            )
-            if progress.status == "COMPLETED":
-                completed += 1
-            previous_complete = progress.status == "COMPLETED"
+        challenge_outs = self._challenge_summaries(
+            challenges, progress_by_challenge, not_entitled=not_entitled
+        )
+        completed = sum(1 for c in challenge_outs if c.progress.status == "COMPLETED")
 
         total = len(challenges)
         pct = round((completed / total) * 100, 2) if total else 0.0

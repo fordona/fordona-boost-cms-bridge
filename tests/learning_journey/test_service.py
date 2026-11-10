@@ -122,6 +122,29 @@ async def test_second_call_does_not_duplicate_the_assignment(
     assert len(repo.assignments) == 1
 
 
+async def test_journey_embeds_each_milestones_challenges_exactly_as_milestone_detail(
+    service: LearningJourneyService,
+) -> None:
+    out = await service.get_learning_journey(USER)
+
+    for milestone in out.milestones:
+        detail = await service.get_milestone_detail(USER, milestone.milestone_id)
+        assert milestone.challenges == detail.challenges
+        assert len(milestone.challenges) == milestone.progress.total_challenges
+
+
+async def test_journey_challenges_of_a_paid_milestone_are_paywalled_for_free_user(
+    repo: FakeLearningJourneyRepository,
+) -> None:
+    service = LearningJourneyService(repo, repo, FakeSubscriptions(subscribed=False))
+
+    out = await service.get_learning_journey(USER)
+
+    paid_milestone = next(m for m in out.milestones if m.milestone_id == "ms_002")
+    assert paid_milestone.challenges
+    assert all(c.access.reason == "SUBSCRIPTION_REQUIRED" for c in paid_milestone.challenges)
+
+
 # --- GET /v1/challenges ----------------------------------------------------------
 
 

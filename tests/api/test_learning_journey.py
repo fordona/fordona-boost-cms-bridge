@@ -42,6 +42,9 @@ async def test_get_learning_journey_returns_the_spec_envelope(
     assert body["success"] is True
     assert body["data"]["journey_id"] == "journey_001"
     assert len(body["data"]["milestones"]) == 10
+    first_milestone = body["data"]["milestones"][0]
+    assert first_milestone["challenges"][0]["challenge_id"] == "ch_001"
+    assert first_milestone["challenges"][0]["display_code"] == "1.1"
 
 
 async def test_get_learning_journey_without_token_is_401(journey_harness: Harness) -> None:
